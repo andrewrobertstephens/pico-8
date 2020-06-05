@@ -11,8 +11,14 @@ __lua__
 first_run=true
 scene="intro"
 sound=false
+debug=true
 
 function _init()
+	if debug then
+		menuitem(1, "multiplier test", multiplier_test)
+		menuitem(2, "sidekicks test", sidekicks_test)
+		menuitem(3, "weapons test", weapons_test)
+	end
 	init_levels()
 	offset=0
 	ticks=0
@@ -26,6 +32,7 @@ function _init()
 	player.y=64
 	player.index=0
 	player.exhaust=false
+	player.multiplier=1
 	player.hit=0
 	player.speed=5
 	player.cool=0
@@ -51,8 +58,6 @@ function _init()
 	 stars[i].speed = rnd(3)+1
 	end
 	sidekicks={}
---	sidekicks_new()
---	sidekicks_new()
 end
 
 function _update()
@@ -128,7 +133,7 @@ function stars_draw()
  end
 end
 
--- intro loop
+-- intro scene
 
 function intro_update()
 	if btn(4) and btn(5) then
@@ -159,39 +164,6 @@ end
 function level_draw()
 	text="level " .. current_level
 	print_center(text, 60)
-end
-
-function level_next()
-	current_level=current_level+1
-	level_intro_count=60
-	level_cursor=1
-	if current_level>#levels and #enemies==0 then
-		scene="intro"
-	else
-		scene="level"
-	end
-end
-
-function level_next_row()
-	local level = levels[current_level]
-	if level_cursor>#level then
-		if #enemies==0 then
-			level_next()
-		end
-	end
-	for i = 1,8 do
-		local x=i*16-12
-		local y=-8
-		local cell=level[level_cursor]
-		if cell!=nil then
-			local kind=flr(cell/10)
-			local bonus=cell%10
-			if kind>0 then
-				enemies_new(x,y,kind,bonus)
-			end
-		end
-		level_cursor=level_cursor+1
-	end	
 end
 
 -- game (main) loop
@@ -258,30 +230,7 @@ function game_input()
   leftclick=0
   player.charge=0
  end
- -- x
- if btnp(5) then
-  player.weapon=player.weapon+1
-  if player.weapon>3 then
-   player.weapon=1
-  end
- end
- -- q
- if btnp(4) and btnp(5) then
- 	if #sidekicks==2 then
- 		sidekicks={}
- 	else
- 	 	sidekicks_new()
- 	end
- end
  
-end
-
-function new_enemy_shot(x,y,kind)
-	enemy_shot={}
-	enemy_shot.x=x
-	enemy_shot.y=y
-	enemy_shot.kind=kind
-	add(enemy_shots,enemy_shot)
 end
 
 -- draw osd stuff
@@ -311,7 +260,285 @@ function osd_draw()
   rectfill(127,122,127-player.charge*2,125,c)
  end
 end
+-->8
+-- levels
 
+function init_levels()
+	levels={}
+	levels[1]={
+		00,00,00,00,00,00,00,00,
+		00,14,00,00,00,00,00,00,
+		00,00,00,01,00,00,00,00,
+		00,00,01,00,00,00,00,00,
+		00,01,00,00,00,00,00,00,
+		01,00,00,00,00,00,00,00,
+		00,00,00,00,00,00,00,00,
+		00,00,00,00,01,00,00,00,
+		00,00,00,00,00,01,00,00,
+		00,00,00,00,00,00,01,00,
+		00,00,00,00,00,00,00,01,
+ 	00,00,00,00,00,00,00,00,	
+		00,00,00,02,00,00,00,00,
+		00,00,00,00,02,00,00,00,
+		00,00,00,02,00,00,00,00,
+		00,00,00,00,02,00,00,00,
+		00,00,00,02,00,00,00,00,
+	}
+end
+
+function level_next()
+	current_level=current_level+1
+	level_intro_count=60
+	level_cursor=1
+	if current_level>#levels and #enemies==0 then
+		scene="intro"
+	else
+		scene="level"
+	end
+end
+
+function level_next_row()
+	local level = levels[current_level]
+	if level_cursor>#level then
+		if #enemies==0 then
+			level_next()
+		end
+	end
+	for i = 1,8 do
+		local x=i*16-12
+		local y=-8
+		local cell=level[level_cursor]
+		if cell!=nil then
+			local kind=flr(cell/10)
+			local bonus=cell%10
+			if kind>0 then
+				enemies_new(x,y,kind,bonus)
+			end
+		end
+		level_cursor=level_cursor+1
+	end	
+end
+
+-->8
+-- test functions
+
+function multiplier_test()
+	player.multiplier=player.multiplier+1
+	if player.multiplier>3 then
+		player.multiplier=1
+	end
+end
+
+function sidekicks_test()
+	if #sidekicks==2 then
+		sidekicks={}
+	else
+		sidekicks_new()
+	end
+end
+
+function weapons_test()
+	player.weapon=player.weapon+1
+	if player.weapon>3 then
+		player.weapon=0
+	end
+end
+-->8
+-- player
+
+function player_update()
+	explosions_update()
+	player_shots_update()
+	if player.index>0 then
+		player.index=0
+	else
+		player.index=1
+	end
+	if player.hit>0 then
+		player.sprite=player.index+1;
+		player.hit=player.hit-1
+	elseif btn(➡️) then
+		player.sprite=4
+	elseif btn(⬅️) then
+		player.sprite=3
+	else
+		player.sprite=player.index
+	end
+ -- handle cooldown if needed
+ player.cool=player.cool-1
+ if player.cool < 0 then
+  player.cool = 0
+ end
+	-- handle player charge
+ player.charge_index=player.charge_index+1
+ if player.charge_index>3 then
+  player.charge_index=0
+ end
+ -- keep player inbounds
+ if player.y<0 then
+	 player.y=0
+ end
+ if player.y>108 then
+  player.y=108
+ end
+ if player.x<0 then
+  player.x=0
+ end
+ if player.x>120 then
+  player.x=120
+ end
+ 
+ -- charge sound if needed
+ if player.charge>10 then
+  if sound then
+	  sfx(3)
+	 end
+ end
+
+end
+
+function player_draw()
+	explosions_draw()
+	powerups_draw()
+ sidekicks_draw()
+ player_shots_draw()
+	-- draw player charge
+ if player.charge>5 then
+  spr(17+player.charge_index,
+   player.x,
+   player.y-8)
+ end 
+ -- draw player
+ spr(player.sprite,
+		player.x,
+ 	player.y)
+end
+
+function player_shots_draw()
+	for i,ps in pairs(player_shots) do
+  spr(49+player_shots[i].weapon,player_shots[i].x,player_shots[i].y)
+	end
+end
+
+function player_shots_new(x,y,w)
+ player_shot={}
+ player_shot.x=x
+ player_shot.y=y
+ player_shot.s=8
+ player_shot.weapon=w
+ if w==0 then
+		player_shot.damage=1
+	elseif w==1 then
+		player_shot.damage=2
+	elseif w==2 then
+		player_shot.damage=4
+	elseif w==3 then
+		player_shot.damage=5
+	else
+		player_shot.damage=10
+ end
+ add(player_shots, player_shot)
+end
+
+function player_shots_update()
+ for i=#player_shots,1,-1 do
+  ps=player_shots[i]
+  ps.y = ps.y - ps.s
+  if ps.y < -8 then
+    del(player_shots,ps)
+  end
+  if ps.i == nil then
+    ps.i = 0
+  else
+    ps.i = ps.i + 1
+    if ps.i > 1 then
+      ps.i = 0
+    end
+  end
+  -- look for collisions
+  for i,en in pairs(enemies) do
+   en.hit=0
+   if collision(ps,en) then
+    en.hit=1
+    en.life=en.life-player_shot.damage
+    del(player_shots,ps)
+    explosions_new(ps.x,ps.y+8,0)
+   end
+  end
+ end
+end
+
+function powerups_draw()
+	for i,pu in pairs(powerups) do
+		spr(22+pu.kind,pu.x,pu.y)
+	end
+end
+
+function powerups_new(x,y,kind)
+	local powerup={}
+	powerup.x=x
+	powerup.y=y
+	powerup.kind=kind
+	add(powerups,powerup)
+end
+
+function powerups_update()
+ for i=#powerups,1,-1 do
+ 	local powerup=powerups[i]
+ 	powerup.y=powerup.y+1
+ 	if collision(powerup,player) then
+ 		if powerup.kind==4 then
+ 			sidekicks_new()
+ 		else
+	 		player.weapon=powerup.kind
+	 	end
+ 		del(powerups,powerup)
+ 	end
+ end
+end
+
+-- player sidekicks
+
+function sidekicks_draw()
+	for i,sidekick in pairs(sidekicks) do
+		spr(11+sidekick.index,
+    sidekick.x,
+    sidekick.y)
+	end
+end
+
+function sidekicks_new()
+	if #sidekicks<2 then
+		local sidekick={}
+		sidekick.x=0
+		sidekick.y=0
+		sidekick.index=0
+		if #sidekicks==0 then	
+			sidekick.location="left"
+		elseif #sidekicks==1 then
+			sidekick.location="right"
+		end
+		add(sidekicks,sidekick)
+	end
+end
+
+function sidekicks_update()
+ for i,sidekick in pairs(sidekicks) do
+  if ticks%5==0 then
+			sidekick.index=sidekick.index+1
+	 	if sidekick.index>3 then
+	  	sidekick.index=0
+	 	end
+ 	end
+		if sidekick.location=="left" then
+ 		sidekick.x=player.x-10
+ 	else
+ 		sidekick.x=player.x+10
+ 	end
+ 	sidekick.y=player.y
+ end
+end
+-->8
 -- enemies
 
 function enemies_update()
@@ -385,223 +612,15 @@ function enemies_new(x,y,kind,bonus)
  add(enemies,enemy)
 end
 
--- player
-
-function player_init()
-	player_shots_init()
-	explosions_init()
+function new_enemy_shot(x,y,kind)
+	enemy_shot={}
+	enemy_shot.x=x
+	enemy_shot.y=y
+	enemy_shot.kind=kind
+	add(enemy_shots,enemy_shot)
 end
-
-function player_update()
-	explosions_update()
-	player_shots_update()
-	if player.index>0 then
-		player.index=0
-	else
-		player.index=1
-	end
-	if player.hit>0 then
-		player.sprite=player.index+1;
-		player.hit=player.hit-1
-	elseif btn(➡️) then
-		player.sprite=4
-	elseif btn(⬅️) then
-		player.sprite=3
-	else
-		player.sprite=player.index
-	end
- -- handle cooldown if needed
- player.cool=player.cool-1
- if player.cool < 0 then
-  player.cool = 0
- end
-	-- handle player charge
- player.charge_index=player.charge_index+1
- if player.charge_index>3 then
-  player.charge_index=0
- end
- -- keep player inbounds
- if player.y<0 then
-	 player.y=0
- end
- if player.y>108 then
-  player.y=108
- end
- if player.x<0 then
-  player.x=0
- end
- if player.x>120 then
-  player.x=120
- end
- 
- -- charge sound if needed
- if player.charge>10 then
-  if sound then
-	  sfx(3)
-	 end
- end
-
-end
-
-function player_draw()
-	explosions_draw()
-	powerups_draw()
- sidekicks_draw()
- player_shots_draw()
-	-- draw player charge
- if player.charge>5 then
-  spr(17+player.charge_index,
-   player.x,
-   player.y-8)
- end 
- -- draw player
- spr(player.sprite,
-		player.x,
- 	player.y)
-end
-
--- player powerups
-
-function powerups_update()
- for i=#powerups,1,-1 do
- 	local powerup=powerups[i]
- 	powerup.y=powerup.y+1
- 	if collision(powerup,player) then
- 		if powerup.kind==4 then
- 			sidekicks_new()
- 		else
-	 		player.weapon=powerup.kind
-	 	end
- 		del(powerups,powerup)
- 	end
- end
-end
-
-function powerups_draw()
-	for i,pu in pairs(powerups) do
-		spr(22+pu.kind,pu.x,pu.y)
-	end
-end
-
-function powerups_new(x,y,kind)
-	local powerup={}
-	powerup.x=x
-	powerup.y=y
-	powerup.kind=kind
-	add(powerups,powerup)
-end
-
--- player sidekicks
-
-function sidekicks_draw()
-	for i,sidekick in pairs(sidekicks) do
-		spr(11+sidekick.index,
-    sidekick.x,
-    sidekick.y)
-	end
-end
-
-function sidekicks_new()
-	if #sidekicks<2 then
-		local sidekick={}
-		sidekick.x=0
-		sidekick.y=0
-		sidekick.index=0
-		if #sidekicks==0 then	
-			sidekick.location="left"
-		elseif #sidekicks==1 then
-			sidekick.location="right"
-		end
-		add(sidekicks,sidekick)
-	end
-end
-
-function sidekicks_update()
- for i,sidekick in pairs(sidekicks) do
-  if ticks%5==0 then
-			sidekick.index=sidekick.index+1
-	 	if sidekick.index>3 then
-	  	sidekick.index=0
-	 	end
- 	end
-		if sidekick.location=="left" then
- 		sidekick.x=player.x-10
- 	else
- 		sidekick.x=player.x+10
- 	end
- 	sidekick.y=player.y
- end
-end
-
--- player shots
-
-function player_shots_update()
- for i=#player_shots,1,-1 do
-  ps=player_shots[i]
-  ps.y = ps.y - ps.s
-  if ps.y < -8 then
-    del(player_shots,ps)
-  end
-  if ps.i == nil then
-    ps.i = 0
-  else
-    ps.i = ps.i + 1
-    if ps.i > 1 then
-      ps.i = 0
-    end
-  end
-  -- look for collisions
-  for i,en in pairs(enemies) do
-   en.hit=0
-   if collision(ps,en) then
-    en.hit=1
-    en.life=en.life-player_shot.damage
-    del(player_shots,ps)
-    explosions_new(ps.x,ps.y+8,0)
-   end
-  end
- end
-end
-
-function player_shots_draw()
-	for i,ps in pairs(player_shots) do
-  spr(49+player_shots[i].weapon,player_shots[i].x,player_shots[i].y)
-	end
-end
-
-function player_shots_new(x,y,w)
- player_shot={}
- player_shot.x=x
- player_shot.y=y
- player_shot.s=8
- player_shot.weapon=w
- if w==0 then
-		player_shot.damage=1
-	elseif w==1 then
-		player_shot.damage=2
-	elseif w==2 then
-		player_shot.damage=4
-	elseif w==3 then
-		player_shot.damage=5
-	else
-		player_shot.damage=10
- end
- add(player_shots, player_shot)
-end
-
+-->8
 -- explosions
-
-function explosions_update()
- if ticks%2==0 then
-	 for i=#explosions,1,-1 do
-	  pe=explosions[i]
-	  pe.index=pe.index+1
-	  if pe.index>4 then
-	   del(explosions,pe)
-	  end
-	 end
- end
-end
 
 function explosions_draw()
  for i,pe in pairs(explosions) do
@@ -622,32 +641,18 @@ function explosions_new(x,y,kind)
  explosion.kind=kind
  add(explosions,explosion)
 end
--->8
--- level data
 
-function init_levels()
-	levels={}
-	levels[1]={
-		00,00,00,00,00,00,00,00,
-		00,14,00,00,00,00,00,00,
-		00,00,00,01,00,00,00,00,
-		00,00,01,00,00,00,00,00,
-		00,01,00,00,00,00,00,00,
-		01,00,00,00,00,00,00,00,
-		00,00,00,00,00,00,00,00,
-		00,00,00,00,01,00,00,00,
-		00,00,00,00,00,01,00,00,
-		00,00,00,00,00,00,01,00,
-		00,00,00,00,00,00,00,01,
- 	00,00,00,00,00,00,00,00,	
-		00,00,00,02,00,00,00,00,
-		00,00,00,00,02,00,00,00,
-		00,00,00,02,00,00,00,00,
-		00,00,00,00,02,00,00,00,
-		00,00,00,02,00,00,00,00,
-	}
+function explosions_update()
+ if ticks%2==0 then
+	 for i=#explosions,1,-1 do
+	  pe=explosions[i]
+	  pe.index=pe.index+1
+	  if pe.index>4 then
+	   del(explosions,pe)
+	  end
+	 end
+ end
 end
-
 __gfx__
 00077000000770000007700000077000000770000000000000000000000000000000000000000000000110000000000000000000000000000000000000000000
 00677600006776000077770000677600006776000000000000000000000000000000000000011000001cc1000009900000099000000990000009900000000000
