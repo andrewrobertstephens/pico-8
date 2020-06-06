@@ -1,140 +1,60 @@
 pico-8 cartridge // http://www.pico-8.com
 version 27
 __lua__
--- ===============
+-- ============================
 -- shooter.p8
 -- pico 8 shooter
 -- v 0.1
 -- andrew stephens
--- ===============
+-- ============================
 
 first_run=true
 scene="intro"
 sound=false
 debug=true
 
+-- pico-8 init
 function _init()
-	if debug then
-		menuitem(1, "multiplier test", multiplier_test)
-		menuitem(2, "sidekicks test", sidekicks_test)
-		menuitem(3, "weapons test", weapons_test)
-	end
-	init_levels()
+	enemies_init()
+	explosions_init()
+	levels_init()
+	powerups_init()
+	player_init()
+	player_shots_init()
+	sidekicks_init()
+	stars_init()
+	tests_init()
 	offset=0
 	ticks=0
-	coolmax=3
-	enemies={}
-	enemy_counter=0
-	enemy_shots={}
-	player = {}
-	powerups={}
-	player.x=60
-	player.y=64
-	player.index=0
-	player.exhaust=false
-	player.multiplier=1
-	player.hit=0
-	player.speed=5
-	player.cool=0
-	player.weapon=0
-	player.charge_index=0
-	player.charge=0
-	player.life=100
-	player.score=0
-	powerups={}
-	player_shots = {}
-	explosions={}
-	current_level=1
-	level_row=1
-	level_cursor=1
 	level_intro_count=50
-	starmax=50
-	stars = {}
-	for i = 1,starmax do
-	 stars[i] = {}
-	 stars[i].x = rnd(128)
-	 stars[i].y = rnd(128)
-	 stars[i].kind = flr(rnd(3))
-	 stars[i].speed = rnd(3)+1
-	end
-	sidekicks={}
 end
 
+-- pico-8 update
 function _update()
  stars_update()
 	if scene=="intro" then
 	 intro_update()
 	elseif scene=="level" then
-		level_update()
+		level_scene_update()
  elseif scene=="game" then
 		game_update()		
 	end		
 end
 
+-- pico-8 draw
 function _draw()
- screen_shake()
 	cls()
 	stars_draw()
  if scene=="intro" then
  	intro_draw()
  elseif scene=="level" then
- 	level_draw()
+ 	level_scene_draw()
  elseif scene=="game" then
   game_draw()
  end   
 end
 
--- helper functions
-
-function collision(rect1,rect2)
-  return rect1.x < rect2.x+8 and
- rect2.x < rect1.x+8 and
- rect1.y < rect2.y+8 and
- rect2.y < rect1.y+8
-end
-
-function print_center(txt,y)
-	local text=tostr(txt)
-	local x=64-#text*4/2
-	print(text,x,y,7)
-end
-
--- http://gamedev.docrobs.co.uk/screen-shake-in-pico-8
-function screen_shake()
-  local fade = 0.95
-  local offset_x=16-rnd(32)
-  local offset_y=16-rnd(32)
-  offset_x*=offset
-  offset_y*=offset
-  camera(offset_x,offset_y)
-  offset*=fade
-  if offset<0.05 then
-    offset=0
-  end
-end
-
--- stars functions
-
-function stars_update()
- for i,star in pairs(stars) do
-  star.y=star.y+star.speed
-  if star.y > 128 then
-   star.x = rnd(128)
-   star.y = -8
-   star.speed = rnd(3) + 1
-   star.kind = flr(rnd(3))
-  end
-	end
-end
-
-function stars_draw()
- for i,star in pairs(stars) do
-  spr(42+star.kind,star.x,star.y)
- end
-end
-
--- intro scene
-
+-- intro scene update
 function intro_update()
 	if btn(4) and btn(5) then
 		scene="level"
@@ -143,6 +63,7 @@ function intro_update()
 	end
 end
 
+-- intro scene draw
 function intro_draw()
 	if first_run then
 		print_center("shooter",55)
@@ -152,88 +73,52 @@ function intro_draw()
 	print_center("press 🅾️+❎ to start",65)
 end
 
--- level scene
-
-function level_update()
+-- level scene update
+function level_scene_update()
 	level_intro_count=level_intro_count-1
 	if level_intro_count<0 then
 		scene="game"
 	end	
 end
 
-function level_draw()
+-- level scene draw
+function level_scene_draw()
 	text="level " .. current_level
 	print_center(text, 60)
 end
 
--- game (main) loop
-
+-- main game update
 function game_update()
  ticks=ticks+1
- if ticks%30==0 then
- 	level_next_row()
- end		
- if ticks>29 then
+ if ticks>=30 then
   ticks=0
  end
- game_input()
+ if ticks%30==0 then
+		levels_next_row()
+ end		
+ screen_shake()
+ player_input()
+ -- call updates
  enemies_update()
+ explosions_update()
  player_update()
+ player_shots_update()
 	powerups_update()
  sidekicks_update()
 end
 
+-- main game draw
 function game_draw()
  enemies_draw()
+	explosions_draw()
 	player_draw()
-	sidekicks_draw()
+ player_shots_draw()
+	powerups_draw()
+ sidekicks_draw()
 	osd_draw()
 end
 
-function game_input()
- -- left
- if btn(⬅️) then
-  player.x=player.x-player.speed
- end
- -- right
- if btn(➡️) then
-  player.x=player.x+player.speed
- end
- -- up
- if btn(⬆️) then
-  player.y=player.y-player.speed
- end
- -- down
- if btn(⬇️) then
-  player.y=player.y+player.speed
- end
- -- z
- if btn(4) then
-  if leftclick==0 then
-   if player.cool==0 then
-    if sound then
-    	sfx(player.weapon-1)
-    end
-    player_shots_new(player.x,player.y,player.weapon)
-   end
-  else
-   player.charge=player.charge+1
-   if player.charge>24 then
-    player.charge=25
-   end
-  end
-  leftclick=1
- else
-  if player.charge>24 then
-   player_shots_new(player.x,player.y,4)
-  end
-  leftclick=0
-  player.charge=0
- end
- 
-end
-
--- draw osd stuff
+-- draw on-screen display
 function osd_draw()
  -- score
  local score
@@ -248,45 +133,259 @@ function osd_draw()
  end
 	print_center(score,121)
  -- health
- rectfill(0,122,player.life/2,125,12)
+ rectfill(0,122,player.life/2,125,8)
  -- charge meter
  if player.charge>0 then
  	local c
   if player.charge>24 and player.index>0 then
    c=7
   else
-   c=8
+   c=12
   end
   rectfill(127,122,127-player.charge*2,125,c)
  end
 end
--->8
--- levels
 
-function init_levels()
+-- find collisions
+function collision(rect1,rect2)
+  return rect1.x < rect2.x+8 and
+ rect2.x < rect1.x+8 and
+ rect1.y < rect2.y+8 and
+ rect2.y < rect1.y+8
+end
+
+-- print centered horizontally
+function print_center(txt,y)
+	local text=tostr(txt)
+	local x=64-#text*4/2
+	print(text,x,y,7)
+end
+
+-- shake screen effect
+-- http://gamedev.docrobs.co.uk/screen-shake-in-pico-8
+function screen_shake()
+  local fade = 0.95
+  local offset_x=16-rnd(32)
+  local offset_y=16-rnd(32)
+  offset_x*=offset
+  offset_y*=offset
+  camera(offset_x,offset_y)
+  offset*=fade
+  if offset<0.05 then
+    offset=0
+  end
+end
+-->8
+-- ----------------------------
+-- enemies
+-- ----------------------------
+
+-- initialize enemies
+function enemies_init()
+	enemies={}
+end
+
+-- update enemy movements
+function enemies_update()
+ for i=#enemies,1,-1 do
+  local enemy=enemies[i]
+  if enemy.kind==1 then
+  	enemy.sprite=64+enemy.index%2
+  	enemy.y=enemy.y+1
+  elseif enemy.kind==2 then
+  	enemy.sprite=68+enemy.index%2
+  	enemy.y=enemy.y+2
+  elseif enemy.kind==3 then
+  	enemy.sprite=72+enemy.index%2
+	 	if enemy.index%20>9 then
+	 		enemy.x=enemy.x-1
+	 	else
+	 		enemy.x=enemy.x+1
+	 	end
+	 	enemy.y=enemy.y+1
+	 elseif enemy.kind==4 then
+  	enemy.sprite=76+enemy.index%2
+	 	if enemy.index<50 then
+	 		enemy.y=enemy.y+1
+	 	elseif enemy.index<100 then
+	 		-- shoot here or something
+	 	elseif enemy.index<150 then
+	 		enemy.y=enemy.y-1		
+	 	else
+	 		del(enemies,enemy)
+			end
+	 end
+  if enemy.life<1 then
+   enemies_kill(enemy)
+  elseif enemy.y>127 then
+   del(enemies,enemy)
+  end
+  if collision(player,enemy) then
+  	offset=0.1
+  	enemies_kill(enemy)
+  	player.hit=30
+  end
+  if enemy.hit>0 then
+  	enemy.hit=enemy.hit-1
+  end
+ 	enemy.index=enemy.index+1
+ end
+end
+
+-- draw enemies
+function enemies_draw()
+ for i,enemy in pairs(enemies) do
+  spr(enemy.sprite,
+  		enemy.x,
+  		enemy.y)
+  print('index:'..enemy.index,
+  		enemy.x+10,
+  		enemy.y-6,
+  		7)
+  print('x:'..enemy.x,
+  		enemy.x+10,
+  		enemy.y,
+  		7)
+  print('y:'..enemy.y,
+  		enemy.x+10,
+  		enemy.y+6,
+  		7)
+ end
+end
+
+-- kill an enemy
+function enemies_kill(enemy)
+	player.score=player.score+1
+ explosions_new(enemy.x,enemy.y,1)
+ if enemy.bonus>0 then
+	 powerups_new(enemy.x,enemy.y,enemy.bonus)
+	end
+ del(enemies,enemy)
+end
+
+-- add new enemy
+function enemies_new(x,y,kind,bonus)
+	local enemy={
+		kind=kind,
+		bonus=bonus,
+	 life=5,
+	 xspeed=1,
+	 yspeed=1,
+	 x=x,
+	 y=y,
+	 kind=kind,
+	 hit=0,
+	 index=0,
+ }
+ add(enemies,enemy)
+end
+
+-- add random enemy
+function enemies_random()
+	local x=flr(rnd(112))+8
+	local y=-8
+	local kind=flr(rnd(4))+1
+	local bonus=flr(rnd(10))+1
+	if bonus>4 then
+			bonus=0
+	end
+	enemies_new(x,y,kind,bonus)
+end
+
+-->8
+-- ----------------------------
+-- explosions
+-- ----------------------------
+
+-- initialize explosions
+function explosions_init()
+	explosions={}
+end
+
+-- update explosions
+function explosions_update()
+ if ticks%2==0 then
+	 for i=#explosions,1,-1 do
+	  pe=explosions[i]
+	  pe.index=pe.index+1
+	  if pe.index>4 then
+	   del(explosions,pe)
+	  end
+	 end
+ end
+end
+
+-- draw explosions
+function explosions_draw()
+ for i,pe in pairs(explosions) do
+  if pe.kind==0 then	
+  	spr(6+pe.index,pe.x,pe.y)
+  	--print(10,pe.x,pe.y+10,7)
+  else
+   spr(55+pe.index,pe.x,pe.y)
+  end
+ end
+end
+
+-- add new explosion
+function explosions_new(x,y,kind)
+ local explosion={
+	 x=x,
+	 y=y,
+	 index=0,
+	 kind=kind,
+ }
+ add(explosions,explosion)
+end
+-->8
+-- ----------------------------
+-- levels
+-- ----------------------------
+
+-- initialize levels
+function levels_init()
+	current_level=1
+	level_row=1
+	level_cursor=1
 	levels={}
 	levels[1]={
+		11,00,00,00,00,00,00,00,
+		
+		00,00,20,00,00,00,00,00,
+		00,00,00,20,00,00,00,00,
+		00,00,20,00,00,00,00,00,
+		00,00,00,20,00,00,00,00,
+		00,00,00,00,00,20,00,00,
+		00,00,00,00,20,00,00,00,
+		00,00,00,00,00,20,00,00,
+		00,00,00,00,20,00,00,00,
+		
 		00,00,00,00,00,00,00,00,
-		00,14,00,00,00,00,00,00,
-		00,00,00,01,00,00,00,00,
-		00,00,01,00,00,00,00,00,
-		00,01,00,00,00,00,00,00,
-		01,00,00,00,00,00,00,00,
+		00,00,00,11,00,00,00,00,
 		00,00,00,00,00,00,00,00,
-		00,00,00,00,01,00,00,00,
-		00,00,00,00,00,01,00,00,
-		00,00,00,00,00,00,01,00,
-		00,00,00,00,00,00,00,01,
- 	00,00,00,00,00,00,00,00,	
-		00,00,00,02,00,00,00,00,
-		00,00,00,00,02,00,00,00,
-		00,00,00,02,00,00,00,00,
-		00,00,00,00,02,00,00,00,
-		00,00,00,02,00,00,00,00,
+
+		00,00,30,00,00,00,00,00,
+		00,00,00,00,00,30,00,00,
+		00,00,30,00,00,00,00,00,
+		00,00,00,00,00,30,00,00,
+		00,00,30,00,00,00,00,00,
+		00,00,00,00,00,30,00,00,
+		00,00,30,00,00,00,00,00,
+		00,00,00,00,00,30,00,00,
+
+		00,40,00,00,00,00,00,00,
+		00,00,00,00,00,00,00,00,
+		00,00,00,00,00,00,40,00,
+		00,00,40,00,00,00,00,00,
+		00,00,00,00,00,40,00,00,
+		00,00,00,40,00,00,00,00,
+		00,00,00,00,40,00,00,00,
+		
 	}
 end
 
-function level_next()
+-- start another level
+function levels_next()
 	current_level=current_level+1
 	level_intro_count=60
 	level_cursor=1
@@ -297,11 +396,12 @@ function level_next()
 	end
 end
 
-function level_next_row()
+-- get next row from level
+function levels_next_row()
 	local level = levels[current_level]
 	if level_cursor>#level then
 		if #enemies==0 then
-			level_next()
+			levels_next()
 		end
 	end
 	for i = 1,8 do
@@ -318,37 +418,36 @@ function level_next_row()
 		level_cursor=level_cursor+1
 	end	
 end
-
 -->8
--- test functions
-
-function multiplier_test()
-	player.multiplier=player.multiplier+1
-	if player.multiplier>3 then
-		player.multiplier=1
-	end
-end
-
-function sidekicks_test()
-	if #sidekicks==2 then
-		sidekicks={}
-	else
-		sidekicks_new()
-	end
-end
-
-function weapons_test()
-	player.weapon=player.weapon+1
-	if player.weapon>3 then
-		player.weapon=0
-	end
-end
--->8
+-- ----------------------------
 -- player
+-- ----------------------------
 
+-- initialize player
+function player_init()
+	acc=0.5
+	player = {
+		x=60,
+		y=64,
+		acc=acc,
+		dx=0,
+		dy=0,
+		max_dx=acc*10,
+		max_dy=acc*10,
+		index=0,
+		multiplier=1,
+		hit=0,
+		cool=0,
+		weapon=0,
+		charge_index=0,
+		charge=0,
+		life=100,
+		score=0,
+	}
+end
+
+-- update player movement
 function player_update()
-	explosions_update()
-	player_shots_update()
 	if player.index>0 then
 		player.index=0
 	else
@@ -365,10 +464,12 @@ function player_update()
 		player.sprite=player.index
 	end
  -- handle cooldown if needed
+ --[[
  player.cool=player.cool-1
  if player.cool < 0 then
   player.cool = 0
  end
+ ]]
 	-- handle player charge
  player.charge_index=player.charge_index+1
  if player.charge_index>3 then
@@ -397,11 +498,8 @@ function player_update()
 
 end
 
+-- draw player
 function player_draw()
-	explosions_draw()
-	powerups_draw()
- sidekicks_draw()
- player_shots_draw()
 	-- draw player charge
  if player.charge>5 then
   spr(17+player.charge_index,
@@ -414,32 +512,79 @@ function player_draw()
  	player.y)
 end
 
-function player_shots_draw()
-	for i,ps in pairs(player_shots) do
-  spr(49+player_shots[i].weapon,player_shots[i].x,player_shots[i].y)
-	end
-end
-
-function player_shots_new(x,y,w)
- player_shot={}
- player_shot.x=x
- player_shot.y=y
- player_shot.s=8
- player_shot.weapon=w
- if w==0 then
-		player_shot.damage=1
-	elseif w==1 then
-		player_shot.damage=2
-	elseif w==2 then
-		player_shot.damage=4
-	elseif w==3 then
-		player_shot.damage=5
-	else
-		player_shot.damage=10
+-- get input for player
+function player_input()
+	-- left and right
+ if btn(⬅️) then
+  player.dx=player.dx-player.acc
  end
- add(player_shots, player_shot)
+ if btn(➡️) then
+  player.dx=player.dx+player.acc
+ end
+ player.x+=player.dx
+ if player.dx>player.max_dx then
+ 	player.dx=player.max_dx
+ elseif player.dx<-player.max_dx then
+ 	player.dx=-player.max_dx
+ end
+ if player.dx>0 then
+ 	player.dx=player.dx-player.acc/2
+ elseif player.dx<0 then
+ 	player.dx=player.dx+player.acc/2
+ end
+ -- up and down
+ if btn(⬆️) then
+ 	player.dy=player.dy-player.acc
+ end
+ if btn(⬇️) then
+ 	player.dy=player.dy+player.acc
+ end
+ player.y+=player.dy
+ if player.dy>player.max_dy then
+ 	player.dy=player.max_dy
+ elseif player.dy<-player.max_dy then
+ 	player.dy=-player.max_dy
+ end
+ if player.dy>0 then
+ 	player.dy=player.dy-player.acc/2
+ elseif player.dy<0 then
+ 	player.dy=player.dy+player.acc/2
+ end
+	-- buttons 
+ if btn(4) then
+  if leftclick==0 then
+   if player.cool==0 then
+    if sound then
+    	sfx(player.weapon-1)
+    end
+    player_shots_new(player.x,player.y,player.weapon)
+   end
+  else
+   player.charge=player.charge+1
+   if player.charge>24 then
+    player.charge=25
+   end
+  end
+  leftclick=1
+ else
+  if player.charge>24 then
+   player_shots_new(player.x,player.y,4)
+  end
+  leftclick=0
+  player.charge=0
+ end
+end
+-->8
+-- ----------------------------
+-- player shots
+-- ----------------------------
+
+-- initialize player shots
+function player_shots_init()
+	player_shots={}
 end
 
+-- update player shots movement
 function player_shots_update()
  for i=#player_shots,1,-1 do
   ps=player_shots[i]
@@ -457,9 +602,8 @@ function player_shots_update()
   end
   -- look for collisions
   for i,en in pairs(enemies) do
-   en.hit=0
    if collision(ps,en) then
-    en.hit=1
+    en.hit=10
     en.life=en.life-player_shot.damage
     del(player_shots,ps)
     explosions_new(ps.x,ps.y+8,0)
@@ -468,20 +612,46 @@ function player_shots_update()
  end
 end
 
-function powerups_draw()
-	for i,pu in pairs(powerups) do
-		spr(22+pu.kind,pu.x,pu.y)
+-- draw player shots
+function player_shots_draw()
+	for i,ps in pairs(player_shots) do
+  spr(49+player_shots[i].weapon,player_shots[i].x,player_shots[i].y)
 	end
 end
 
-function powerups_new(x,y,kind)
-	local powerup={}
-	powerup.x=x
-	powerup.y=y
-	powerup.kind=kind
-	add(powerups,powerup)
+-- add new player shot
+function player_shots_new(x,y,w)
+ player_shot={
+ 	x=x,
+ 	y=y,
+ 	s=8,
+ 	weapon=w,
+ }
+ if w==0 then
+		player_shot.damage=1
+	elseif w==1 then
+		player_shot.damage=2
+	elseif w==2 then
+		player_shot.damage=4
+	elseif w==3 then
+		player_shot.damage=5
+	else
+		player_shot.damage=10
+ end
+ add(player_shots, player_shot)
 end
 
+-->8
+-- ----------------------------
+-- powerups
+-- ----------------------------
+
+-- initialize powerups
+function powerups_init()
+	powerups={}
+end
+
+-- update powerups movements
 function powerups_update()
  for i=#powerups,1,-1 do
  	local powerup=powerups[i]
@@ -497,31 +667,33 @@ function powerups_update()
  end
 end
 
--- player sidekicks
-
-function sidekicks_draw()
-	for i,sidekick in pairs(sidekicks) do
-		spr(11+sidekick.index,
-    sidekick.x,
-    sidekick.y)
+-- draw powerups
+function powerups_draw()
+	for i,pu in pairs(powerups) do
+		spr(22+pu.kind,pu.x,pu.y)
 	end
 end
 
-function sidekicks_new()
-	if #sidekicks<2 then
-		local sidekick={}
-		sidekick.x=0
-		sidekick.y=0
-		sidekick.index=0
-		if #sidekicks==0 then	
-			sidekick.location="left"
-		elseif #sidekicks==1 then
-			sidekick.location="right"
-		end
-		add(sidekicks,sidekick)
-	end
+-- add new powerup
+function powerups_new(x,y,kind)
+	local powerup={
+		x=x,
+		y=y,
+		kind=kind,
+	}
+	add(powerups,powerup)
+end
+-->8
+-- ----------------------------
+-- sidekicks
+-- ----------------------------
+
+-- initialize sidekicks
+function sidekicks_init()
+	sidekicks={}
 end
 
+-- update sidekicks movement
 function sidekicks_update()
  for i,sidekick in pairs(sidekicks) do
   if ticks%5==0 then
@@ -538,120 +710,115 @@ function sidekicks_update()
  	sidekick.y=player.y
  end
 end
--->8
--- enemies
 
-function enemies_update()
- for i=#enemies,1,-1 do
-  local en=enemies[i]
-	 if en.kind==2 then
-	 	if en.index>20 then
-	 		en.x=en.x-en.xspeed
-	 	else
-	 		en.x=en.x+en.xspeed
-	 	end
-	 	en.y=en.y+en.yspeed
-	 	en.index=en.index+1
-	 	if en.index>19 then
-	 		en.index=0
-	 	end
-	 elseif en.kind==3 then
-	 	if en.index<60 then
-	 		en.y=en.y+en.yspeed
-	 	elseif en.index>90 then
-	 		en.y=en.y-en.yspeed
-	 	elseif en.index>150 then
-	 		del(enemies,en)
-	 	end
-	 else
-	 	en.y=en.y+en.yspeed
-	 end
-  if en.life<1 then
-   enemies_kill(en)
-  elseif en.y>127 then
-   del(enemies,en)
-  end
-  if collision(player,en) then
-  	enemies_kill(en)
-  	player.hit=30
-  	offset=0.1
-  end
-  en.index=en.index+1
- end
-end
-
-function enemies_draw()
- for i,en in pairs(enemies) do
-  local i=64+(en.kind*2)+en.hit
-  spr(i,en.x,en.y)
-  --print(en.life,en.x,en.y-7,7)
- end
-end
-
-function enemies_kill(en)
-	player.score=player.score+1
- explosions_new(en.x,en.y,1)
- if en.bonus>0 then
-	 powerups_new(en.x,en.y,en.bonus)
+-- draw sidekicks
+function sidekicks_draw()
+	for i,sidekick in pairs(sidekicks) do
+		spr(11+sidekick.index,
+    sidekick.x,
+    sidekick.y)
 	end
- del(enemies,en)
 end
 
-function enemies_new(x,y,kind,bonus)
-	local enemy={}
-	enemy.kind=kind
-	enemy.bonus=bonus
- enemy.life=5
- enemy.xspeed=1
- enemy.yspeed=1
- enemy.x=x
- enemy.y=y
- enemy.kind=kind
- enemy.hit=0
- enemy.index=0
- add(enemies,enemy)
-end
-
-function new_enemy_shot(x,y,kind)
-	enemy_shot={}
-	enemy_shot.x=x
-	enemy_shot.y=y
-	enemy_shot.kind=kind
-	add(enemy_shots,enemy_shot)
+-- add a new sidekick (max 2)
+function sidekicks_new()
+	if #sidekicks<2 then
+		local sidekick={
+			x=0,
+			y=0,
+			index=0,
+		}
+		if #sidekicks==0 then	
+			sidekick.location="left"
+		elseif #sidekicks==1 then
+			sidekick.location="right"
+		end
+		add(sidekicks,sidekick)
+	end
 end
 -->8
--- explosions
+-- ----------------------------
+-- stars
+-- ----------------------------
 
-function explosions_draw()
- for i,pe in pairs(explosions) do
-  if pe.kind==0 then	
-  	spr(6+pe.index,pe.x,pe.y)
-  	--print(10,pe.x,pe.y+10)
-  else
-   spr(55+pe.index,pe.x,pe.y)
+-- initialize stars
+function stars_init()
+	stars={}
+	for i = 1,50 do
+		local star={
+	 	x = rnd(128),
+	 	y = rnd(128),
+	 	kind = flr(rnd(3)),
+	 	speed = rnd(3)+1,
+	 }
+	 add(stars,star)
+	end
+end
+
+-- update stars movements
+function stars_update()
+ for i,star in pairs(stars) do
+  star.y=star.y+star.speed
+  if star.y > 128 then
+   star.x = rnd(128)
+   star.y = -8
+   star.speed = rnd(3) + 1
+   star.kind = flr(rnd(3))
   end
- end
+	end
 end
 
-function explosions_new(x,y,kind)
- local explosion={}
- explosion.x=x
- explosion.y=y
- explosion.index=0
- explosion.kind=kind
- add(explosions,explosion)
+-- draw stars
+function stars_draw()
+ for i,star in pairs(stars) do
+  spr(42+star.kind,star.x,star.y)
+ end
+end
+-->8
+-- ----------------------------
+-- tests
+-- ----------------------------
+
+-- add test options to menu
+function tests_init()
+	if debug then
+		menuitem(1, "enemies test", tests_enemies)
+		menuitem(2, "multiplier test", tests_multiplier)
+		menuitem(3, "sidekicks test", tests_sidekicks)
+		menuitem(4, "weapons test", tests_weapons)
+	end
 end
 
-function explosions_update()
- if ticks%2==0 then
-	 for i=#explosions,1,-1 do
-	  pe=explosions[i]
-	  pe.index=pe.index+1
-	  if pe.index>4 then
-	   del(explosions,pe)
-	  end
-	 end
- end
+-- add random enemy
+function tests_enemies()
+	local kind=rnd(3)+1
+	local bonus=rnd(4)
+	enemies_new(10,10,kind,bonus)
+end
+
+-- change multiplier
+function tests_multiplier()
+	player.multiplier=player.multiplier+1
+	if player.multiplier>3 then
+		player.multiplier=1
+	end
+end
+
+-- change number of sidekicks
+function tests_sidekicks()
+	if #sidekicks==2 then
+		sidekicks={}
+	else
+		sidekicks_new()
+	end
+end
+
+-- change weapons
+function tests_weapons()
+	player.weapon=player.weapon+1
+	if player.weapon>3 then
+		player.weapon=0
+	end
 end
 __gfx__
 00077000000770000007700000077000000770000000000000000000000000000000000000000000000110000000000000000000000000000000000000000000
@@ -664,12 +831,12 @@ __gfx__
 50000005509aa9057000000700500050050005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000007777770077777700777777007777770077777700000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000070000006700000067000000670000006700000060000000000000000000000000000000000000000
-0000000008e00e800008000000000000000000000000000070000006700aa00670010006700bb006700990060000000000000000000000000000000000000000
-0000000000000000000e70000008800000000000000000007007700670a77a06700c000670b77b06709999060000000000000000000000000000000000000000
-000000008e0000e808000080008ee80000088000000000007007700670a77a06700c000670700706709999060000000000000000000000000000000000000000
-00000000000000000e7007e008e77e80008ee8000000000070000006700aa0067007000670000006700990060000000000000000000000000000000000000000
-0000000000000000070000708e7007e808e77e800000000070000006700000067000000670000006700000060000000000000000000000000000000000000000
-000000008e0000e80000000000000000000000000000000006666660066666600666666006666660066666600000000000000000000000000000000000000000
+0000000001c00c100001000000000000000000000000000070000006700aa00670010006700bb006700990060000000000000000000000000000000000000000
+0000000000000000000c70000001100000000000000000007007700670a77a06700c000670b77b06709999060000000000000000000000000000000000000000
+000000001c0000c101000010001cc10000011000000000007007700670a77a06700c000670700706709999060000000000000000000000000000000000000000
+00000000000000000c7007c001c77c10001cc1000000000070000006700aa0067007000670000006700990060000000000000000000000000000000000000000
+0000000000000000070000701c7007c101c77c100000000070000006700000067000000670000006700000060000000000000000000000000000000000000000
+000000001c0000c10000000000000000000000000000000006666660066666600666666006666660066666600000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000001c1000001c100000000000
@@ -678,22 +845,38 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000011000000000000008800000000000000000000000000000000000900990090000000000000000000000000000000000000000
-0000000000000000000000000001100000000000008ee8000000000000a0a0000009a90009099090009aa9000000000000000000000000000000000000000000
-0000000000000000000aa000000cc000000bb00008e77e80000000000000000000000000000aa00009a77a900000000000000000000000000000000000000000
-000000000007700000a77a00000cc00000b77b008e7777e8000000000a0000a00a0770a009a77a909a7777a90000000000000000000000000000000000000000
-000000000007700000a77a00000cc0000b7007b08e7007e800000000000000a0090770a009a77a909a7777a90000000000000000000000000000000000000000
-0000000000000000000aa00000077000b700007b8e0000e8000000000a0000000a000090000aa00009a77a900000000000000000000000000000000000000000
-00000000000000000000000000077000000000008e0000e800000000000a0a00000a9a0009099090009aa9000000000000000000000000000000000000000000
-00000000000000000000000000077000000000008000000800000000000000000000000000000000900990090000000000000000000000000000000000000000
-00cccc000077770000eeee00007777000bbbbbb007777770009aa900007777000000000000000000000000000000000000000000000000000000000000000000
-0cddddc0077777700ee88ee007777770b3bbbb3b7777777709aaaa90077777700000000000000000000000000000000000000000000000000000000000000000
-cdd11ddc77777777ee8ee8ee77777777b3bbbb3b77777777a9aaaa9a777777770000000000000000000000000000000000000000000000000000000000000000
-cd1111dc77777777e8e55e8e77777777b33bb33b77777777a9a11a9a777777770000000000000000000000000000000000000000000000000000000000000000
-cd1cc1dc77777777e8e55e8e77777777b333333b77777777a9aaaa9a777777770000000000000000000000000000000000000000000000000000000000000000
-0cdccdc007777770ee8ee8ee77777777033cc33007777770a900009a770000770000000000000000000000000000000000000000000000000000000000000000
-00cccc00007777000ee88ee007777770003cc30000777700a000000a700000070000000000000000000000000000000000000000000000000000000000000000
-00c00c000070070000eeee00007777000003300000077000a000000a700000070000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000011000000000000011110000000000000000000000000000000000900990090000000000000000000000000000000000000000
+000000000000000000000000000110000000000001cccc100000000000a0a0000009a90009099090009aa9000000000000000000000000000000000000000000
+0000000000000000000aa000000cc000000bb0001cc77cc1000000000000000000000000000aa00009a77a900000000000000000000000000000000000000000
+000000000007700000a77a00000cc00000b77b001c7777c1000000000a0000a00a0770a009a77a909a7777a90000000000000000000000000000000000000000
+000000000007700000a77a00000cc0000b7007b01c7777c100000000000000a0090770a009a77a909a7777a90000000000000000000000000000000000000000
+0000000000000000000aa00000077000070000701c7007c1000000000a0000000a000090000aa00009a77a900000000000000000000000000000000000000000
+00000000000000000000000000077000000000001c0000c100000000000a0a00000a9a0009099090009aa9000000000000000000000000000000000000000000
+00000000000000000000000000077000000000001000000100000000000000000000000000000000900990090000000000000000000000000000000000000000
+0055550000555500000000000000000000000000000aa000000000000000000000cccc00a7cccc7a0077770000000000009aa900c79aa97c0077770000000000
+056666500566665000777700000000000e0000e00ea77ae007000070000000000cddddc07cddddc7077777700000000009aaaa9079aaaa970777777000000000
+56555565565555650777777000000000ee8008eeee8778ee7770077700000000cdd11ddccdd11ddc7777777700000000a9aaaa9aa9aaaa9a7777777700000000
+56577565565775650777777000000000e8e55e8ee8e55e8e7777777700000000cd1111dccd1111dc7777777700000000a9a11a9aa9a11a9a7777777700000000
+56555565565555650777777000000000e8e55e8ee8e55e8e7777777700000000cd1cc1dccd1cc1dc7777777700000000a9aaaa9aa9aaaa9a7777777700000000
+56577665565776650777777000000000ee8ee8eeee8ee8ee77777777000000000cdccdc00cdccdc00777777000000000a900009aa900009a7700007700000000
+056666500566665000777700000000000ee88ee00ee88ee0077777700000000000cccc0000cccc000077770000000000a000000aa000000a7000000700000000
+0055550000555500000000000000000000eeee0000eeee00007777000000000000c00c0000c00c000070070000000000a000000aa000000a7000000700000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0a7777a00a7777a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+b3bbbb3bb3bbbb3b7777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+b3bbbb3bb3bbbb3b7777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+b33bb33bb33bb33b7777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+b333333bb333333b7777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+033cc330033cc3300777777000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+003cc300003cc3000077770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00033000000330000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __label__
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
 88888777777888eeeeee888888888888888888888888888888888888888888888888888888888888888ff8ff8888228822888222822888888822888888228888
