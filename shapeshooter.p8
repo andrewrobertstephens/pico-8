@@ -2,7 +2,7 @@ pico-8 cartridge // http://www.pico-8.com
 version 27
 __lua__
 -- ============================
--- shooter.p8
+-- shapeshooter.p8
 -- pico-8 shooter
 -- v 0.1
 -- andrew stephens
@@ -248,24 +248,12 @@ end
 -- draw enemies
 function enemies_draw()
  for i,enemy in pairs(enemies) do
-  spr(enemy.sprite,
-  		enemy.x,
-  		enemy.y,
-  		enemy.size,
-  		enemy.size)
+		rect(enemy.x,enemy.y,enemy.x+enemy.size*8,enemy.y+enemy.size*8,0)  
+  rect(enemy.x,enemy.y,enemy.x+enemy.size*8,enemy.y+enemy.size*8,9)
   if debug then
-	  print('index:'..enemy.index,
-	  		enemy.x+10,
-	  		enemy.y-6,
-	  		7)
-	  print('x:'..enemy.x,
-	  		enemy.x+10,
-	  		enemy.y,
-	  		7)
-	  print('y:'..enemy.y,
-	  		enemy.x+10,
-	  		enemy.y+6,
-	  		7)
+	  print('index:'..enemy.index,enemy.x+10,enemy.y-6,7)
+	  print('x:'..enemy.x,enemy.x+10,enemy.y,7)
+	  print('y:'..enemy.y,enemy.x+10,enemy.y+6,7)
 		end
  end
 end
@@ -342,8 +330,9 @@ end
 function explosions_draw()
  for i,pe in pairs(explosions) do
   if pe.kind==0 then
-  	spr(7+pe.index,pe.x,pe.y)
+  	--spr(7+pe.index,pe.x,pe.y)
   	--print(10,pe.x,pe.y+10,7)
+  	rect(pe.x,pe.y+10,pe.x+pe.index,pe.y+10+pe.index,7)
   else
    spr(55+pe.index,pe.x,pe.y)
   end
@@ -554,9 +543,12 @@ function player_draw()
    player.y-8)
  end 
  -- draw player
+ rect(player.x,player.y,player.x+8,player.y+8,12)
+ --[[
  spr(player.sprite,
 		player.x,
  	player.y)
+ ]]
 end
 
 -- get input for player
@@ -724,7 +716,7 @@ function player_shots_new(
  	player_shot.sprite=nil
  	player_shot.size=2
  elseif weapon==blast then
-	 player_shot.sprite=35
+	 player_shot.sprite=37
 		player_shot.size=2
  end
  add(player_shots,player_shot)
@@ -781,7 +773,8 @@ end
 -- draw powerups
 function powerups_draw()
 	for i,pu in pairs(powerups) do
-		spr(22+pu.kind,pu.x,pu.y)
+		circ(pu.x+4,pu.y+4,4,7)
+		print(pu.kind,pu.x,pu.y,7)
 	end
 end
 
@@ -882,7 +875,8 @@ end
 -- draw stars
 function stars_draw()
  for i,star in pairs(stars) do
-  spr(42+star.kind,star.x,star.y)
+  --spr(42+star.kind,star.x,star.y)
+  pset(star.x,star.y,7)
  end
 end
 -->8
