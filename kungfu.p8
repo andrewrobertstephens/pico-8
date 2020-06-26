@@ -12,11 +12,12 @@ left=0
 right=1
 up=0
 down=1
-baseline=225
+baseline=65
 gravity=2
 enemy_counter=0
 grab_guy=0
 knife_guy=1
+small_guy=2
 player={
 	x=384+60,
 	y=baseline,
@@ -33,6 +34,8 @@ player={
 	btnup_down=false,
 	btn4_down=false,
 	btn5_down=false,
+	btnleft_down=false,
+	btnright_down=false,
 	hitbox={
 		x=0,
 		y=0,
@@ -42,7 +45,8 @@ player={
 	sprite=0,
 	grabbed=0,
 	hold_time=6,
-	health=30
+	health=30,
+	strike_hit=0,
 }
 enemies={}
 ticks=0
@@ -54,48 +58,81 @@ mode_death=4
 mode_gameover=5
 mode_complete=6
 game_mode=mode_menu
+intro_timer=200
 
 
 function _draw()	
 	
 	if game_mode==mode_menu then
 		cls(0)
-		local x=32
+		local y=32
 		for i=0,112,16 do
-			spr(96,i,x)
-			spr(96,i,x+20)
-			spr(97,i+8,x)
-			spr(97,i+8,x+20)
+			spr(96,i,y)
+			spr(96,i,y+20)
+			spr(97,i+8,y)
+			spr(97,i+8,y+20)
 		end
-		spr(70,64-7*8/2,x+10,7,1)
-		center_print("press 🅾️+❎ to start",x+40)
+		spr(70,64-7*8/2,y+10,7,1)
+		center_print("press 🅾️+❎ to start",64,y+40,7)
+		spr(77,5,68,2,2)
+		spr(77,106,68,2,2,true)
 		
-	else
+	elseif game_mode==mode_intro then
 		cls(12)
-		map(0,0,0,24,64,32)
+		--map(0,0,0,24,64,10)
+		draw_level()
+		draw_player()
+		update_camera()
+		local xc=get_camera_x()+64
+		center_print("level 1",xc,50,7,true)
+	
+	elseif game_mode==mode_start then
+		cls(12)
+		--map(0,0,0,24,64,10)
+		draw_level()
+		draw_player()
+		local xc=get_camera_x()+64
+		center_print("level 1",xc,50,7,true)
+
+	elseif game_mode==mode_play then
+		cls(12)
+		--map(0,0,0,24,64,10)
+		draw_level()
 		draw_player()	
 		draw_enemies()
-		draw_osd()
 		
 	end
+	
+	draw_osd()
 
 end
 
 
 function _update()
+
 	ticks=ticks+1
 	
 	if game_mode==mode_menu then
 		if btn(4) and btn(5) then
+			game_mode=mode_intro
+		end
+
+	elseif game_mode==mode_intro then
+		player.x=64*8-16
+		player.y=baseline
+		player.direction=left
+		camera(64*8-128,player.y-66)
+		intro_timer-=1
+		if intro_timer<0 then
 			game_mode=mode_start
 		end
+		update_player()
 
 	elseif game_mode==mode_start then
 		update_player()
-		update_camera()	
 	
 	elseif game_mode==mode_play then
-		if ticks%20==0 then
+		if ticks%50==0 then
 			new_enemy()
 		end
 		update_player()
@@ -110,9 +147,11 @@ function _update()
 end
 
 
-function center_print(text, y)
-	local x=64-#text*4/2
-	print(text,x,y)
+function center_print(text,xc,y,c)
+	local w=#text*4
+	local x=xc-w/2-4
+	rectfill(x-1,y-1,x+w-1,y+5,0)
+	print(text,x,y,c)
 end
 
 
@@ -132,6 +171,14 @@ function collision_narrow(rect1,rect2)
 end
 
 
+function draw_level()
+	for i=0,63 do
+		local x=i*8*4
+		map(0,0,x,24,4,10)
+	end
+end
+
+
 function draw_osd()
 	local camera_x = get_camera_x()
 	local camera_y = get_camera_y()
@@ -141,7 +188,7 @@ function draw_osd()
 	print("player:_____",camera_x,camera_y+8,7)
 	print("enemy: _____",camera_x,camera_y+16,7)
 	]]
-	print(tostr(enemy_counter),camera_x,camera_y,7)
+	print(tostr(player.grabbed),camera_x,camera_y,7)
 end
 
 function get_camera_x()
@@ -157,6 +204,15 @@ function start_level()
 	player.x=64*128-8
 	player.y=baseline
 end
+
+
+function strike_collision(hitbox,enemy)
+	return hitbox.x<enemy.x2-2 and
+   hitbox.x2>enemy.x+2 and
+   hitbox.y<enemy.y2-2 and
+   hitbox.y2>enemy.y+2	
+end
+
 
 function update_camera()
 	if game_mode=="level_start" then
@@ -181,7 +237,10 @@ end
 
 -- draw player
 function draw_player()
-	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
+	spr(player.sprite,player.x,player.y,2,2,player.flip_x)	
+	if player.strike_hit>0 then
+		spr(68,player.hitbox.x-2,player.hitbox.y-2)
+	end
 	--rectfill(player.hitbox.x,player.hitbox.y,player.hitbox.x2,player.hitbox.y2,10)
 end
 
@@ -197,12 +256,19 @@ function update_player()
 	end
 	
 	if player.health<=0 then
-		game_mode="death"
+		--game_mode=mode_death
 	end
 	
-	if game_mode==mode_start then
+	if game_mode==mode_intro then
+	
+	elseif game_mode==mode_start then
+		player.walking=true
+		if player.x>64*8-64 then
+			player.x-=1
+		else
+			game_mode=mode_play
+		end
 		
-
 	elseif game_mode==mode_death then
 		if player.direction==left then
 			player.x+=gravity/2
@@ -216,10 +282,29 @@ function update_player()
 		
 	else
 	
+		player.last_direction=player.direction
+
 		if btn(⬅️) and player.jumping==0 then
 			player.direction=left
 		elseif btn(➡️) and player.jumping==0 then
 			player.direction=right
+		end
+
+		if player.last_direction!=player.direction then
+			player.grabbed-=1
+			if player.grabbed<0 then
+				player.grabbed=0
+			end		
+		end
+		
+		if player.grabbed>1 then
+				player.health-=1
+		else
+			for enemy in all(enemies) do
+				if enemy.grabbing==true then
+					enemy.dead=true
+				end
+			end
 		end
 		
 		if btn(⬇️) then
@@ -239,7 +324,7 @@ function update_player()
 			player.btnup_down=false
 		end
 		
-		if btn(4) then
+		if btn(4) and player.grabbed<1 then
 			if player.btn4_down==false then
 				player.kicking=10
 			end
@@ -248,7 +333,7 @@ function update_player()
 			player.btn4_down=false
 		end
 		
-		if btn(5) then
+		if btn(5) and player.grabbed<1 then
 			if player.btn5_down==false then
 				player.punching=10
 			end
@@ -258,18 +343,18 @@ function update_player()
 		end
 		
 		if btn(⬅️) and 
-				player.jumping==0 and
-				player.kicking==0 and 
-				player.punching==0 and 
-				player.grabbed==0 and 
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and 
 				player.position==up then
 			player.x-=player.speed
 			player.walking=true
 		elseif btn(➡️) and 
-				player.jumping==0 and
-				player.kicking==0 and 
-				player.punching==0 and 
-				player.grabbed==0 and
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and
 				player.position==up then
 			player.x+=player.speed
 			player.walking=true
@@ -305,11 +390,11 @@ function update_player()
 		end	
 		
 		if player.direction==right then
-			player.hitbox.x=player.x+11
-			player.hitbox.x2=player.hitbox.x+4
+			player.hitbox.x=player.x+12
+			player.hitbox.x2=player.hitbox.x+3
 		else
 			player.hitbox.x=player.x
-			player.hitbox.x2=player.hitbox.x+4
+			player.hitbox.x2=player.hitbox.x+3
 		end
 		
 		if player.position==down then
@@ -318,6 +403,13 @@ function update_player()
 		else
 			player.hitbox.y=player.y
 			player.hitbox.y2=player.y+4
+		end
+		
+		if player.strike_hit>0 then
+			player.strike_hit-=1
+		end
+		if player.strike_hit<0 then
+			player.strike_hit=0
 		end
 
 	end
@@ -330,7 +422,8 @@ end
 -- update player sprite
 function update_player_sprite()
 	player.sprite=0
-	if game_mode=="death" then
+
+	if game_mode==mode_death then
 		player.sprite=46
 	else
 	
@@ -384,10 +477,12 @@ end
 
 
 function draw_enemies()
-	for i,enemy in ipairs(enemies) do
+	for enemy in all(enemies) do
 		local index=100
 		if enemy.kind==1 then
 			index=128
+		elseif enemy.kind==2 then
+			index=192
 		end
 		local sprite=enemy.w_index*2+index
 		local flip_x=false
@@ -396,6 +491,8 @@ function draw_enemies()
 				sprite=110
 			elseif enemy.kind==1 then
 				sprtie=140
+			elseif enemy.kind==2 then
+				sprite=198
 			end
 		end
 		if enemy.direction==left then
@@ -415,6 +512,7 @@ function new_enemy()
 		kind=0,
 		health=1,
 		speed=1.5,
+		grabbing=false,
 	}
 	if enemy.direction==left then
 		enemy.x=player.x+64
@@ -424,7 +522,7 @@ function new_enemy()
 	enemy.x2=enemy.x+16
 	enemy.y2=enemy.y+16
 	if enemy_counter>5 then
-		enemy.kind=1
+		enemy.kind=2
 		enemy.health=2
 		enemy_counter=0
 	end
@@ -435,7 +533,7 @@ end
 
 function update_enemies()
 
-	for i,enemy in ipairs(enemies) do
+	for enemy in all(enemies) do
 
 		if ticks%3==0 then
 			enemy.w_index=enemy.w_index+1
@@ -444,7 +542,8 @@ function update_enemies()
 			end
 		end
 		
-		if collision(enemy,player.hitbox) and (player.punching>5 or player.kicking>5) then
+		if strike_collision(player.hitbox,enemy) and (player.punching>5 or player.kicking>5) then
+			player.strike_hit=3
 			enemy.health-=1
 			if enemy.health<1 then
 				enemy.dead=true
@@ -466,7 +565,11 @@ function update_enemies()
 				update_grab_guy(enemy)
 				
 			elseif enemy.kind==1 then
-				update_knife_guy(enemy)				
+				update_knife_guy(enemy)			
+				
+			elseif enemy.kind==2 then
+				update_small_guy(enemy)	
+					
 			end
 
 		end
@@ -484,10 +587,11 @@ end
 
 
 function update_grab_guy(enemy)
-	if collision_narrow(enemy,player) then
+	if enemy.grabbing==false and collision_narrow(enemy,player) then
 		player.grabbed=10
-		player.health-=1
-	else
+		enemy.grabbing=true
+	end
+	if enemy.grabbing==false then
 		if enemy.direction==right then
 			enemy.x+=enemy.speed
 		else
@@ -504,6 +608,14 @@ function update_knife_guy(enemy)
 		else
 		end
 	end
+end
+
+function update_small_guy(enemy)
+		if enemy.direction==right then
+			enemy.x+=enemy.speed
+		else
+			enemy.x-=enemy.speed
+		end				
 end
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -538,22 +650,22 @@ cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000ccc
 cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777ccccccc0977cccccccccccccccc09777cc
 ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990ccccc09cccccccccccccccccc0c7099c
 ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000ccccc0cccccccccccccccccccccc0000
-ccccccccbbbbbb3688888888888a8888ccccccc7cccccccc09900990099009900999990000999990000000000999999009900990000000000000000000000000
-ccccccccbbbbb36baaaaa8aaaa8a8aaacccccc76cc33cccc89908990899089908999999009999990000000008999999089908990000000000000000000000000
-ccccccccbbbb36bbccccc8a88a8a8a88ccccc76cc3333ccc89999990899089908998899089988800000000008998880089908990000000000000000000000000
-ccccccccbbb36bbbccccc8a8888a8888ffff444cccc73ccc89999900899089908990899089900000000000008999999089908990000000000000000000000000
-ccccccccbb36bbbbccccc8aaaa8a8aaacc555ccccc73cccc89999900899089908990899089900990000000008999999089908990000000000000000000000000
-ccccccccb36bbbbbccccc888888a8888cc76ccccc73c88cc89988990899999908990899089999990000000008998880089999990000000000000000000000000
-cccccccc33333333cccccccccc8a8cccc76cccccc738338c89908990899999008990899089999990000000008990000089999900000000000000000000000000
-cccccccc00000000cccccccccc8a8ccc76cccccccc733c3888008800888880008800880088888800000000008880000088888000000000000000000000000000
-ffffffff7ccccccccccccccccc8a8ccccccaaccccccccccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-4444444467cccccccccccccccc8a8ccccca33acccc33cccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-ffffffffc67cccccaaaaaaaaaaaaaaaacc3aa3ccc3333ccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-ffffffffc444ffff8888888888888888ca3333accc773ccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-44444444ccc555ccaaaaaaaaaaaaaaaac3a33a3cc733cccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-ffffffffcccc67ccccccccccccccccccc33aa33c73cccccc00000000000000000000000000000000000000000000000000000000000000000000000000000000
-ffffffffccccc67ccccccccccccccccccc3333cc73c8888c00000000000000000000000000000000000000000000000000000000000000000000000000000000
-ffffffffcccccc67ccccccccccccccccccc33cccc7333c3800000000000000000000000000000000000000000000000000000000000000000000000000000000
+ccccccccbbbbbb3688888888888a8888cacccccccccccccc00990099009900990099999000099999000000000999999009900990cccccaa3333c38cc00000000
+ccccccccbbbbb36baaaaa8aaaa8a8aaacc7ccccacccc33cc08990899089908990899999900999999000000008999999089908990ccccc833883833cc00000000
+ccccccccbbbb36bbccccc8a88a8a8a88cccccc7cccc3333c08999999089908990899889908998880000000008998880089908990cccc8c833333c7cc00000000
+ccccccccbbb36bbbccccc8a8888a8888ccccccccccc37ccc08999990089908990899089908990000000000008999999089908990ccccc8c83ac7cccc00000000
+ccccccccbb36bbbbccccc8aaaa8a8aaacccccccccccc37cc08999990089908990899089908990099000000008999999089908990ccccccc83aaccccc00000000
+ccccccccb36bbbbbccccc888888a8888c7cccccccc88c37c08998899089999990899089908999999000000008998880089999990cccccc8c83baaccc00000000
+cccccccc33333333cccccccccc8a8cccacccc7ccc833837c08990899089999900899089908999999000000008990000089999900ccccccccc333bacc00000000
+cccccccc00000000cccccccccc8a8cccccccccac83c337cc08800880088888000880088008888880000000008880000088888000ccccccccc8383bac00000000
+ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8ccccc77ccccccccccccccccccccc383bac00000000
+4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aaccc7667cccccccccccccccc8cc833bbac00000000
+ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777cc7777cccccccccccccc8c8ccc3bbacc00000000
+ffffffffc444ffff8888888888888888ca3bb3acccc377ccbcc8cccbffbb88ffeeffeeff7ccccfcc8a77778cccc76cccccccccccccccc8a8c3bbaccc00000000
+44444444ccc555ccaaaaaaaaaaaaaaaacba33abccccc337cc8cccc8cfff88fffffeeffeeccfcccc7c8aaa777cc6777ccccc77cccccc88aa338bacccc00000000
+ffffffffcccc67ccccccccccccccccccc3baab3ccccccc37cb3cc3bcff88bbffffeeffeec7ffcf7ccc888aaccc7667ccccc76cccccccc8333baccccc00000000
+ffffffffccccc67ccccccccccccccccccc3bb3ccc8888c373c8338c3c88ffbbcceffeefcc77cc77cccccc8cccc7777cccc6777cccccccccc3acccccc00000000
+ffffffffcccccc67ccccccccccccccccccc33ccc83c3337cc3b88b3cccffffcccceeffccccc7ccccccccccccccc76cccccc66ccccccccccccccccccc00000000
 4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccc992222cccccccccc992222cccccccccccc2222ccccccccccccccccccccc
 8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999ccccccccccc99999ccccccccccc99999cccccccccccc2999cccccccccccccccccccccc
 8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc2929cccccccccccc2929cccccccccccff929cccccccccccff929cccccccccccc2929ccccccccc4cccccccccccc
@@ -602,17 +714,33 @@ cccccc666666ccccccccccc6666cccccccccccc6666ccccccccccc666c666ccccccccc9966666ccc
 ccccc666cc666ccccccccc4966cccccccccccc4966ccccccccccc666ccc66cccccccc6666cc66cccccccc6666cc66cccccccccccc49666cc0000000000000000
 cccc499cccc99ccccccccc49cccccccccccccc49cccccccccccc499ccc499ccccccc499ccc499ccccccc499ccc499cccccccccccc4c6499c0000000000000000
 cccc4444ccc444cccccccc444ccccccccccccc444ccccccccccc4444ccc444cccccc4444ccc444cccccc4444ccc444cccccccccccccc44440000000000000000
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc88ccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc98cccccccccccccccccccccccc
+ccccccc4444cccccccccccc4444cccccccccccc4444cccccccccc4cccc99cccccccccccc44ccccccccccccccccccccccccccc33933cccccccccccccccccccccc
+cccccc4999cccccccccccc4999cccccccccccc4999cccccccccc499ccc99ccccccccccc4994cccccccccc388ccccccccccccc333333cccccccccc4c33c33c8cc
+cccccc4919cccccccccccc4919cccccccccccc4919cccccccccc4999c33cccccccccccc499cccccccccc33888ccccccccccccc38888ccccccccc4993333398cc
+cccccc9999cccccccccccc9999cccccccccccc9999cccccccccc449883cccccccccccc88333ccccccccc3388844cccccccccc333888ccccccccc499338398ccc
+cccccc3883cccccccccccc338ccccccccccccc833ccccccccc99c8888c33ccccccccc888333cccccccc893833994ccccccccc33388ccccccccccc4488833cccc
+ccccc338883ccccccccccc338ccccccccccccc833ccccccccc99338883333cccccccc88883cccccccc8933333994cccccccccc994cccccccccccccc88833cccc
+ccccc3388899cccccccccc3399cccccccccccc833399ccccccc3333833399cccccccc333333ccccccc8c33c33c4cccccccccc4994ccccccccccccccc883ccccc
+cccccc998899ccccccccccc399ccccccccccccc33399ccccccccccc333c888cccccccc33933ccccccccccccccccccccccccccc44cccccccccccccccccccccccc
+cccccc9933ccccccccccccc33cccccccccccccc33ccccccccccccccc333ccccccccccccc89cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ccccc33cc33cccccccccccc33cccccccccccccc33ccccccccccccccc833cccccccccccccc88ccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ccccc39cc39ccccccccccc39cccccccccccccc39cccccccccccccccc893ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ccccc888c888cccccccccc888ccccccccccccc888ccccccccccccccc8ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101010000000000000000000000010101010000000000000000000000000101010100000000000000000000000001010101000000000000000000000000
-0000000000000000000000000000020000000000000000000000000000000200020202020202020202020202020202000202020202020202020202020002020000000202020202020202020202020200000002020202020202020202020202000000020202020202020202020202020000000202020202020202020202020200
+0000000000000000000000000000020000000000000000000000000000000200020202020202020202020202020202000202020202020202020202020002020000000000000002020202020202020202000000000000000202020202020202020000020202020202020202020202020000000202020202020202020202020200
 __map__
 4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141
 4243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372424363724243637242436372
-5153525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252
-4051404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
-4040514040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
-4040405140404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
-4040404051404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
+5253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252525352525253525252535252
+4040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
+4040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
+4040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
+4040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040
 5050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050505050
 6160616061606160616061606160616061606161606160616061606160616160616061606160616061606160616061606160616061606160616061606160616061606160616061606161606160616061606160616160616061606160616061606160616061606160616160616061606160616061606160616061606160616061
 4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141
