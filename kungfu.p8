@@ -15,15 +15,14 @@ baseline=65
 gravity=2
 ticks=0
 
-intro_timer=150
 logfile="kungfu"
 
 
 function _init()
-	init_enemies()
-	init_levels()
 	init_modes()
+	init_levels()
 	init_player()
+	init_enemies()
 	init_projectiles()
 	change_mode(mode_menu)
 	printh("kungfu.p8 log",logfile,true)
@@ -70,6 +69,14 @@ function _draw()
 		draw_enemies()
 		draw_osd()
 		
+	elseif game_mode==mode_death then
+		cls(12)
+		draw_level()
+		draw_projectiles()
+		draw_player()
+		draw_enemies()
+		draw_osd()
+		
 	end
 	
 end
@@ -85,9 +92,6 @@ function _update()
 		end
 
 	elseif game_mode==mode_intro then
-		player.x=64*8-16
-		player.y=baseline
-		player.direction=left
 		camera(64*8-128,player.y-66)
 		intro_timer-=1
 		update_player()
@@ -97,11 +101,7 @@ function _update()
 		update_camera()
 
 	elseif game_mode==mode_start then
-		player.walking=true
 		update_player()
-		if player.x<64*8-64 then
-			change_mode(mode_play)
-		end
 		update_camera()
 	
 	elseif game_mode==mode_play then
@@ -133,12 +133,12 @@ function parse_rect(r)
 	local new_rect = {
 		x1=r.x,
 		y1=r.y,
-		x2=r.x+r.width,
-		y2=r.y+r.height,
+		x2=r.x+r.width-1,
+		y2=r.y+r.height-1,
 	}
 	if r.position~=nil then
 		if r.position==down then
-			new_rect.y1=new_rect.y1+r.height/2
+			new_rect.y1=new_rect.y1+r.height/2-1
 		end
 	end
 	return new_rect
@@ -175,18 +175,22 @@ function draw_osd()
 	local x=camera_x+5
 	local y=camera_y+5
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
-	print("player:",x,y,8)
-	print(" enemy:",x,y+8,9)
 
-	rectfill(x+28,y,x+28+player.health,y+4,8)
+	print("player:",x,y,8)
+	if player.health>0 then
+		rectfill(x+28,y,x+28+player.health,y+4,8)
+	end
+
+	print(" enemy:",x,y+8,9)
 	rectfill(x+28,y+8,x+28+50,y+12,9)
 
 	draw_osd_level(x+85,y)
 	print("life:1",x+85,y+8,7)
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
-	cursor(camera_x+60,camera_y)
+
 	--print(tostr(player.grabbed),camera_x,camera_y,7)
-		print(#projectiles,camera_x,camera_y+106,7)
+	--print(#projectiles,camera_x,camera_y+106,7)
+	--print(player.health,camera_x,camera_y+106,7)
 end
 
 
@@ -279,8 +283,8 @@ function new_enemy(kind,stagger)
 		throwing=0,
 		attack_height=up,
 		cooldown=0,
-		width=7,
-		height=15,
+		width=8,
+		height=16,
 	}
 	if direction>0 then
 		enemy.direction=right
@@ -291,7 +295,7 @@ function new_enemy(kind,stagger)
 		enemy.health=2
 	elseif enemy.kind==small_guy then
 		enemy.y+=8
-		enemy.size=1
+		enemy.height=8
 	end
 	if enemy.direction==left then
 		enemy.x=player.x+64+stagger
@@ -331,9 +335,11 @@ function update_enemies()
 			end
 		end
 		
-		if strike_collision(player.hitbox,enemy) and (player.punching>5 or player.kicking>5) then
+		if collision(player.hitbox,enemy) and (player.punching>5 or player.kicking>5) then
 			player.strike_hit=3
 			enemy.health-=1
+			sfx(-1)
+			sfx(10)
 		end
 		
 		if enemy.health<=0 then
@@ -385,7 +391,8 @@ function update_grab_guy(enemy)
 	else
 		enemy.sprite+=enemy.w_index*2
 		if collision(enemy,player) then
-			player.grabbed=10
+			player.grabbed=5
+			player.jump_dir=0
 			enemy.grabbing=true
 		else
 			enemy.x+=enemy.direction*enemy.speed
@@ -495,7 +502,7 @@ function init_modes()
 	mode_death=5
 	mode_gameover=6
 	mode_win=7
-	game_mode=mode_menu
+	intro_timer=160
 end
 
 
@@ -504,9 +511,14 @@ function change_mode(mode)
 	if game_mode==mode_intro then
 		music(5)
 	elseif game_mode==mode_start then
+		init_enemies()
+		init_player()
+		init_projectiles()
 		sfx(8)
 	elseif game_mode==mode_play then
 		music(0)
+	elseif game_mode==mode_death then
+		music(-1)	
 	end
 end
 -->8
@@ -517,7 +529,7 @@ end
 
 function init_player()
 	player={
-		x=384+60,
+		x=64*8-16,
 		y=baseline,
 		x2=384+60+16,
 		y2=baseline+16,
@@ -537,17 +549,19 @@ function init_player()
 		hitbox={
 			x=0,
 			y=0,
-			x2=0,
-			y2=0,
+			width=4,
+			height=4
 		},
 		sprite=0,
 		grabbed=0,
 		hold_time=6,
 		health=50,
 		strike_hit=0,
-		width=7,
-		height=15,
+		width=8,
+		height=16,
 		hurt=0,
+		jump_max=16,
+		jump_dir=0,
 	}
 end
 
@@ -558,7 +572,75 @@ function draw_player()
 	if player.strike_hit>0 then
 		spr(68,player.hitbox.x-2,player.hitbox.y-2)
 	end
-	--rectfill(player.hitbox.x,player.hitbox.y,player.hitbox.x2,player.hitbox.y2,10)
+	rectfill(player.hitbox.x,player.hitbox.y,player.hitbox.x+player.hitbox.width-1,player.hitbox.y+player.hitbox.height-1,10)
+end
+
+
+function get_player_input()
+	if btn(⬅️) and player.jumping==0 then
+		player.direction=left
+	elseif btn(➡️) and player.jumping==0 then
+		player.direction=right
+	end
+	if btn(⬇️) then
+		player.position=down
+	elseif player.punching==0 and player.kicking==0 then
+		player.position=up
+	end
+	if btn(⬆️) then
+		if player.btnup_down==false then
+			if player.y==baseline then
+				player.jumping=player.jump_max
+			end
+			player.jump_dir=0
+			if btn(⬅️) then
+				player.jump_dir=left
+			elseif btn(➡️) then
+				player.jump_dir=right
+			end
+		end
+		player.btnup_down=true
+	else
+		player.btnup_down=false
+	end
+	if btn(4) and player.grabbed<1 then
+		if player.btn4_down==false then
+			player.kicking=10
+			sfx(9)
+		end
+		player.btn4_down=true
+	else
+		player.btn4_down=false
+	end
+	if btn(5) and player.grabbed<1 then
+		if player.btn5_down==false then
+			player.punching=10
+			sfx(9)
+		end
+		player.btn5_down=true
+	else
+		player.btn5_down=false
+	end
+	if btn(⬅️) and 
+			player.jumping<1 and
+			player.kicking<1 and 
+			player.punching<1 and 
+			player.grabbed<1 and 
+			player.position==up then
+		player.x-=player.speed
+		player.walking=true
+	elseif btn(➡️) and 
+			player.jumping<1 and
+			player.kicking<1 and 
+			player.punching<1 and 
+			player.grabbed<1 and
+			player.position==up then
+		player.x+=player.speed
+		player.walking=true
+	else
+		player.walking=false
+		player.w_index=0
+	end
 end
 
 
@@ -571,47 +653,24 @@ function update_player()
 		end
 	end
 	
-	if player.health<=0 then
-		--game_mode=mode_death
-		player.health=0
-	end
-	
-	if game_mode==mode_intro then
-	
-	elseif game_mode==mode_start then
+	if game_mode==mode_start then
 		player.walking=true
-		player.x-=1
-		
-	elseif game_mode==mode_death then
-		if player.direction==left then
-			player.x+=gravity/2
-		else
-			player.x-=gravity/2
-		end
-		player.y+=gravity
-		if player.y>get_camera_y()+128 then
-			start_level()
+		player.x-=player.speed
+		if player.x<64*8-1-56 then
+			change_mode(mode_play)
 		end
 		
-	else
-	
+	elseif game_mode==mode_play then
 		player.last_direction=player.direction
-
-		if btn(⬅️) and player.jumping==0 then
-			player.direction=left
-		elseif btn(➡️) and player.jumping==0 then
-			player.direction=right
-		end
-
+		get_player_input()
 		if player.last_direction!=player.direction then
 			player.grabbed-=1
 			if player.grabbed<0 then
 				player.grabbed=0
 			end		
-		end
-		
+		end		
 		if player.grabbed>1 then
-				player.health-=1
+				player.health-=0.5
 		else
 			for enemy in all(enemies) do
 				if enemy.grabbing==true then
@@ -619,65 +678,11 @@ function update_player()
 				end
 			end
 		end
-		
-		if btn(⬇️) then
-			player.position=down
-		elseif player.punching==0 and player.kicking==0 then
-			player.position=up
+		-- apply gravity/momentum
+		if player.jumping>0 then
+			player.x+=player.jump_dir*player.speed
 		end
-		
-		if btn(⬆️) then
-			if player.btnup_down==false then
-				if player.y==baseline then
-					player.jumping=10
-				end
-			end
-			player.btnup_down=true
-		else
-			player.btnup_down=false
-		end
-		
-		if btn(4) and player.grabbed<1 then
-			if player.btn4_down==false then
-				player.kicking=10
-			end
-			player.btn4_down=true
-		else
-			player.btn4_down=false
-		end
-		
-		if btn(5) and player.grabbed<1 then
-			if player.btn5_down==false then
-				player.punching=10
-			end
-			player.btn5_down=true
-		else
-			player.btn5_down=false
-		end
-		
-		if btn(⬅️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and 
-				player.position==up then
-			player.x-=player.speed
-			player.walking=true
-		elseif btn(➡️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and
-				player.position==up then
-			player.x+=player.speed
-			player.walking=true
-		else
-			player.walking=false
-			player.w_index=0
-		end
-		
-		-- apply gravity
-		if player.jumping>5 then
+		if player.jumping>player.jump_max/2 then
 			player.y-=gravity
 		else
 			player.y+=gravity
@@ -685,10 +690,8 @@ function update_player()
 				player.y=baseline
 			end
 		end
-		
 		player.x2=player.x+16
 		player.y2=player.y+16
-		
 		player.kicking-=1
 		if player.kicking<0 then
 			player.kicking=0
@@ -700,33 +703,32 @@ function update_player()
 		player.jumping-=1
 		if player.jumping<0 then
 			player.jumping=0
-		end	
-		
+		end
 		if player.direction==right then
 			player.hitbox.x=player.x+12
-			player.hitbox.x2=player.hitbox.x+3
 		else
 			player.hitbox.x=player.x
-			player.hitbox.x2=player.hitbox.x+3
 		end
-		
-		if player.position==down then
-			player.hitbox.y=player.y+8
-			player.hitbox.y2=player.y+12
-		else
-			player.hitbox.y=player.y
-			player.hitbox.y2=player.y+4
+		player.hitbox.position=player.position
+		if player.jumping>0 and player.kicking>0 then
+			player.hitbox.position=down
 		end
-		
-		if player.strike_hit>0 then
-			player.strike_hit-=1
-		end
-		if player.strike_hit<0 then
-			player.strike_hit=0
-		end
-		
 		if player.hurt>0 then
 			player.hurt-=1
+		end		
+		if player.health<=0 then
+			change_mode(mode_death)
+		end
+
+	elseif game_mode==mode_death then
+		if player.direction==left then
+			player.x+=gravity/2
+		else
+			player.x-=gravity/2
+		end
+		player.y+=gravity
+		if player.y>get_camera_y()+128 then
+			change_mode(mode_start)
 		end
 
 	end
@@ -737,13 +739,10 @@ end
 
 
 function update_player_sprite()
-
 	player.sprite=0
-
 	if game_mode==mode_death then
 		player.sprite=46
 	else
-	
 		if player.jumping>0 then
 			player.sprite=2
 			if player.kicking>player.hold_time then
@@ -1012,15 +1011,17 @@ __map__
 4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
 4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
 __sfx__
-010c0000073750030507375053750737500305073750537507375003050737505375073750a3750737505375073750030507375053750737500305073750537507375003050737505375073750a3750737505375
-010c00000c355003050c3550a3550c355003050c3550a3550c355003050c3550a3550c3550f3550c3550a3550c355003050c3550a3550c355003050c3550a3550c355003050c3550a3550c3550f3550c3550a355
-010c00000e355000000e3550c3550e355000000e3550c3550e355000000e3550c3550e355113550e3550c3550c355000000c3550a3550c355000000c3550a3550c355000000c3550a3550c3550f3550c3550a355
-010c00000065500005006550065500655000050065500655006550000500655006550065500005006550065500655000000065500655006550000000655006550065500000006550065500655000000065500655
-011000001a450184501545013450114500e450114500e4000e4000e4500e400004001a450184501545013450114500e4501145000400004000e45000400004001a450184501545013450114500e4501145000400
-01100000004000e45000400004000c4500e4000e45000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400
-011000001f4501d4501a4501845016450134501645013400074001345000400004001f4501d4501a4501845016450134501645000400004001345000400004001f4501d4501a4501845016450134501645000400
-011000000040013450004000040011450004001345000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400
-01070000136552560003655216001365518600036550f600136552560003655216001365518600036550f600136552560003655216001365518600036550f600136552560003655216001365518600036550f600
+010c0000073250030507325053250732500305073250532507325003050732505325073250a3250732505325073250030507325053250732500305073250532507325003050732505325073250a3250732505325
+010c00000c325003050c3250a3250c325003050c3250a3250c325003050c3250a3250c3250f3250c3250a3250c325003050c3250a3250c325003050c3250a3250c325003050c3250a3250c3250f3250c3250a325
+010c00000e325000000e3250c3250e325000000e3250c3250e325000000e3250c3250e325113250e3250c3250c325000000c3250a3250c325000000c3250a3250c325000000c3250a3250c3250f3250c3250a325
+010c00000062500005006250062500625000050062500625006250000500625006250062500005006250062500625000050062500625006250000500625006250062500005006250062500625000050062500625
+011000001a430184301543013430114300e430114300e4000e4000e4300e400004001a430184301543013430114300e4301143000400004000e43000400004001a430184301543013430114300e4301143000400
+01100000004000e43000400004000c4300e4000e43000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400
+011000001f4301d4301a4301843016430134301643013400074001343000400004001f4301d4301a4301843016430134301643000400004001343000400004001f4301d4301a4301843016430134301643000400
+011000000040013430004000040011430004001343000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400004000040000400
+01060000136452560003645216001364518600036450f600136452560003645216001364518600036450f600136452560003645216001364518600036450f600136452560003645216001364518600036450f600
+010800003167424674006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604
+010c00002867500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005
 __music__
 01 00034344
 00 00034344
