@@ -31,6 +31,7 @@ function _init()
 	init_enemies()
 	init_levels()
 	init_player()
+	init_projectiles()
 	change_mode(mode_menu)
 	printh("kungfu.p8 log",logfile,true)
 end
@@ -71,6 +72,7 @@ function _draw()
 	elseif game_mode==mode_play then
 		cls(12)
 		draw_level()
+		draw_projectiles()
 		draw_player()	
 		draw_enemies()
 		draw_osd()
@@ -110,11 +112,12 @@ function _update()
 		update_camera()
 	
 	elseif game_mode==mode_play then
-		if ticks%50==0 then
-			new_enemy()
+		if ticks%100==0 then
+			new_enemy_group()
 		end
-		update_player()
 		update_enemies()
+		update_player()
+		update_projectiles()
 		update_camera()
 		
 	elseif game_mode==mode_death then
@@ -180,6 +183,7 @@ function draw_osd()
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 	cursor(camera_x+60,camera_y)
 	--print(tostr(player.grabbed),camera_x,camera_y,7)
+		print(#projectiles,camera_x,camera_y+106,7)
 end
 
 
@@ -245,6 +249,7 @@ end
 function init_enemies()
 	enemies={}
 	enemy_counter=0
+	enemy_group_counter=0
 	grab_guy=0
 	knife_guy=1
 	small_guy=2
@@ -258,8 +263,7 @@ function draw_enemies()
 end
 
 
-function new_enemy()
-	local kind=small_guy
+function new_enemy(kind,stagger)
 	local camera_x = get_camera_x()
 	local direction=flr(rnd(2))
 	enemy={
@@ -272,6 +276,11 @@ function new_enemy()
 		dead=false,
 		size=2,
 		knife=false,
+		facing=direction,
+		idle=0,
+		throwing=0,
+		attack_height=up,
+		cooldown=0,
 	}
 	if direction>0 then
 		enemy.direction=right
@@ -285,12 +294,26 @@ function new_enemy()
 		enemy.size=1
 	end
 	if enemy.direction==left then
-		enemy.x=player.x+64
+		enemy.x=player.x+64+stagger
 	else
-		enemy.x=player.x-64
+		enemy.x=player.x-64-stagger
 	end
 	add(enemies,enemy)
-	enemy_counter+=1
+end
+
+
+function new_enemy_group()
+	local total=3
+	for i=1,total-1 do
+		new_enemy(grab_guy,i*16)
+	end
+	if enemy_group_counter>2 then
+		new_enemy(knife_guy,total*16)
+		enemy_group_counter=0
+	else
+		new_enemy(grab_guy,total*16)
+		enemy_group_counter+=1
+	end
 end
 
 
@@ -339,7 +362,7 @@ function update_enemies()
 		end
 		
 		enemy.flip_x=false
-		if enemy.direction==left then
+		if enemy.facing==left then
 			enemy.flip_x=true
 		end
 		
@@ -364,29 +387,64 @@ function update_grab_guy(enemy)
 			player.grabbed=10
 			enemy.grabbing=true
 		else
-			if enemy.direction==right then
-				enemy.x+=enemy.speed
-			else
-				enemy.x-=enemy.speed
-			end				
+			enemy.x+=enemy.direction*enemy.speed
+			enemy.facing=enemy.direction
 		end
 	end
 end
 
 
 function update_knife_guy(enemy)
+
+	local target=0
+	local window=8	
+
 	enemy.sprite=128
+	enemy.facing=enemy.direction
+	
 	if enemy.dead==true then
 		enemy.sprite=140
-	elseif enemy.knife==true then
-	else
-		enemy.sprite+=enemy.w_index*2
-		if enemy.direction==right then
-			enemy.x+=enemy.speed
-		else
-			enemy.x-=enemy.speed
-		end
+	elseif enemy.direction==right then
+		target=player.x-32
+	elseif enemy.direction==left then
+		target=player.x+32
 	end
+	
+	if enemy.throwing>0 then
+		if enemy.throwing==1 then
+			if enemy.attack_height==up then
+				new_projectile(knife,enemy.x,player.y-4,2*enemy.direction,0)
+				enemy.attack_height=down
+				enemy.sprite=134
+			else
+				new_projectile(knife,enemy.x,player.y+4,2*enemy.direction,0)
+				enemy.attack_height=up
+				enemy.sprite=136
+			end
+			enemy.throwing=10
+		elseif enemy.throwing<8 then
+			enemy.sprite=132
+		elseif enemy.throwing<5 then
+			enemy.sprite=134
+		end
+		enemy.throwing-=1
+	elseif enemy.cooldown<1 then
+		if enemy.x<target-8 then
+			enemy.sprite+=enemy.w_index*2
+			enemy.x+=enemy.speed
+			enemy.facing=right
+		elseif enemy.x>target+8 then
+			enemy.sprite+=enemy.w_index*2
+			enemy.x-=enemy.speed
+			enemy.facing=left
+		else
+			enemy.throwing=10
+			enemy.cooldown=50
+		end
+	else
+		enemy.cooldown-=1
+	end
+	
 end
 
 
@@ -692,6 +750,49 @@ function update_player_sprite()
 		player.flip_x=true
 	end
 end
+-->8
+-- projectiles
+
+
+function init_projectiles()
+	knife=0
+	projectiles={}
+end
+
+
+function draw_projectiles()
+	for projectile in all(projectiles) do
+		spr(98,projectile.x,projectile.y,1,1,projectile.flip_x)
+	end
+end
+
+
+function new_projectile(kind,x,y,xspeed,yspeed)
+	projectile={
+		kind=kind,
+		x=x,
+		y=y,
+		xspeed=xspeed,
+		yspeed=yspeed,
+	}
+	add(projectiles,projectile)
+end
+
+
+function update_projectiles()
+	for projectile in all(projectiles) do
+		projectile.x+=projectile.xspeed
+		projectile.y+=projectile.yspeed
+		if kind==0 then
+			projectile.sprite=98
+		end
+		projectile.flip_x=false
+		if projectile.xspeed<0 then
+			projectile.flip_x=true
+		end
+	end	
+end
+
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
