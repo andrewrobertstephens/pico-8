@@ -14,15 +14,7 @@ down=1
 baseline=65
 gravity=2
 ticks=0
-mode_menu=0
-mode_intro=1
-mode_start=2
-mode_play=3
-mode_complete=4
-mode_death=5
-mode_gameover=6
-mode_win=7
-game_mode=mode_menu
+
 intro_timer=150
 logfile="kungfu"
 
@@ -30,6 +22,7 @@ logfile="kungfu"
 function _init()
 	init_enemies()
 	init_levels()
+	init_modes()
 	init_player()
 	init_projectiles()
 	change_mode(mode_menu)
@@ -136,31 +129,38 @@ function center_print(text,xc,y,c)
 end
 
 
-function change_mode(mode)
-	game_mode=mode
-	if game_mode==mode_intro then
-		music(5)
-	elseif game_mode==mode_start then
-		sfx(8)
-	elseif game_mode==mode_play then
-		music(0)
+function parse_rect(r)
+	local new_rect = {
+		x1=r.x,
+		y1=r.y,
+		x2=r.x+r.width,
+		y2=r.y+r.height,
+	}
+	if r.position~=nil then
+		if r.position==down then
+			new_rect.y1=new_rect.y1+r.height/2
+		end
 	end
+	return new_rect
 end
 
 
-function collision(rect1,rect2)
-	return rect1.x<rect2.x2 and
-   rect1.x2>rect2.x and
-   rect1.y<rect2.y2 and
-   rect1.y2>rect2.y
+function collision(r1,r2)
+	local rect1=parse_rect(r1)
+	local rect2=parse_rect(r2)
+	return rect1.x1<rect2.x2 and
+  rect1.x2>rect2.x1 and
+  rect1.y1<rect2.y2 and
+  rect1.y2>rect2.y1
 end
 
 
-function collision_narrow(rect1,rect2)
-	return rect1.x+4<rect2.x2-4 and
-   rect1.x2-4>rect2.x+4 and
-   rect1.y<rect2.y2 and
-   rect1.y2>rect2.y
+function is_offscreen(r)
+	local cx=get_camera_x()
+	return 
+			(r.direction==left and r.x<cx-r.width) or
+			(r.direction==right and r.x>cx+127+r.width) or
+			r.y>127
 end
 
 
@@ -175,11 +175,14 @@ function draw_osd()
 	local x=camera_x+5
 	local y=camera_y+5
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
-	print("player:█████",x,y,8)
-	print(" enemy:█████",x,y+8,9)
+	print("player:",x,y,8)
+	print(" enemy:",x,y+8,9)
 
-	draw_osd_level(x+75,y)
-	print("life:1",x+79,y+8,7)
+	rectfill(x+28,y,x+28+player.health,y+4,8)
+	rectfill(x+28,y+8,x+28+50,y+12,9)
+
+	draw_osd_level(x+85,y)
+	print("life:1",x+85,y+8,7)
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 	cursor(camera_x+60,camera_y)
 	--print(tostr(player.grabbed),camera_x,camera_y,7)
@@ -214,11 +217,6 @@ function strike_collision(hitbox,enemy)
    hitbox.y<enemy.y2-2 and
    hitbox.y2>enemy.y+2	
 end
-
-
-
-
-
 -->8
 -- camera
 
@@ -281,6 +279,8 @@ function new_enemy(kind,stagger)
 		throwing=0,
 		attack_height=up,
 		cooldown=0,
+		width=7,
+		height=15,
 	}
 	if direction>0 then
 		enemy.direction=right
@@ -366,7 +366,8 @@ function update_enemies()
 			enemy.flip_x=true
 		end
 		
-		if enemy.y>get_camera_y()+128 then
+
+		if is_offscreen(enemy) then
 			del(enemies,enemy)
 		end
 
@@ -383,7 +384,7 @@ function update_grab_guy(enemy)
 		enemy.sprite=104
 	else
 		enemy.sprite+=enemy.w_index*2
-		if collision_narrow(enemy,player) then
+		if collision(enemy,player) then
 			player.grabbed=10
 			enemy.grabbing=true
 		else
@@ -413,15 +414,15 @@ function update_knife_guy(enemy)
 	if enemy.throwing>0 then
 		if enemy.throwing==1 then
 			if enemy.attack_height==up then
-				new_projectile(knife,enemy.x,player.y-4,2*enemy.direction,0)
+				new_projectile(knife,enemy.x,player.y,2*enemy.direction,0)
 				enemy.attack_height=down
 				enemy.sprite=134
 			else
-				new_projectile(knife,enemy.x,player.y+4,2*enemy.direction,0)
+				new_projectile(knife,enemy.x,player.y+8,2*enemy.direction,0)
 				enemy.attack_height=up
 				enemy.sprite=136
 			end
-			enemy.throwing=10
+			enemy.throwing-=1
 		elseif enemy.throwing<8 then
 			enemy.sprite=132
 		elseif enemy.throwing<5 then
@@ -482,6 +483,35 @@ function draw_level()
 	end
 end
 -->8
+-- modes
+
+
+function init_modes()
+	mode_menu=0
+	mode_intro=1
+	mode_start=2
+	mode_play=3
+	mode_complete=4
+	mode_death=5
+	mode_gameover=6
+	mode_win=7
+	game_mode=mode_menu
+end
+
+
+function change_mode(mode)
+	game_mode=mode
+	if game_mode==mode_intro then
+		music(5)
+	elseif game_mode==mode_start then
+		sfx(8)
+	elseif game_mode==mode_play then
+		music(0)
+	end
+end
+-->8
+
+-->8
 -- player
 
 
@@ -513,8 +543,11 @@ function init_player()
 		sprite=0,
 		grabbed=0,
 		hold_time=6,
-		health=30,
+		health=50,
 		strike_hit=0,
+		width=7,
+		height=15,
+		hurt=0,
 	}
 end
 
@@ -540,6 +573,7 @@ function update_player()
 	
 	if player.health<=0 then
 		--game_mode=mode_death
+		player.health=0
 	end
 	
 	if game_mode==mode_intro then
@@ -690,6 +724,10 @@ function update_player()
 		if player.strike_hit<0 then
 			player.strike_hit=0
 		end
+		
+		if player.hurt>0 then
+			player.hurt-=1
+		end
 
 	end
 	
@@ -699,6 +737,7 @@ end
 
 
 function update_player_sprite()
+
 	player.sprite=0
 
 	if game_mode==mode_death then
@@ -716,6 +755,8 @@ function update_player_sprite()
 			elseif player.punching>0 then
 				player.sprite=6
 			end
+		elseif player.hurt>0 then
+			player.sprite=36
 		elseif player.position==up then
 			if player.kicking>player.hold_time then
 				player.sprite=8
@@ -774,7 +815,14 @@ function new_projectile(kind,x,y,xspeed,yspeed)
 		y=y,
 		xspeed=xspeed,
 		yspeed=yspeed,
+		size=1,
+		width=7,
+		height=3,
+		direction=right,
 	}
+	if xspeed<0 then
+		projectile.direction=left
+	end
 	add(projectiles,projectile)
 end
 
@@ -787,8 +835,15 @@ function update_projectiles()
 			projectile.sprite=98
 		end
 		projectile.flip_x=false
-		if projectile.xspeed<0 then
+		if projectile.direction==left then
 			projectile.flip_x=true
+		end
+		if collision(projectile,player) then
+			player.hurt=5
+			player.health-=10
+			del(projectiles,projectile)
+		elseif	is_offscreen(projectile) then
+			del(projectiles,projectile)
 		end
 	end	
 end
@@ -826,14 +881,14 @@ cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000ccc
 cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777ccccccc0977cccccccccccccccc09777cc
 ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990ccccc09cccccccccccccccccc0c7099c
 ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000ccccc0cccccccccccccccccccccc0000
-ccccccccbbbbbb3688888888888a8888cacccccccccccccc00990099009900990099999000099999000000000999999009900990ccc77ccccccccaa3333c38cc
-ccccccccbbbbb36baaaaa8aaaa8a8aaacc7ccccacccc33cc08990899089908990899999900999999000000008999999089908990cc7dd7ccccccc833883833cc
-ccccccccbbbb36bbccccc8a88a8a8a88cccccc7cccc3333c08999999089908990899889908998880000000008998880089908990cc7777cccccc8c833333c7cc
-ccccccccbbb36bbbccccc8a8888a8888ccccccccccc37ccc08999990089908990899089908990000000000008999999089908990ccc7dcccccccc8c83ac7cccc
-ccccccccbb36bbbbccccc8aaaa8a8aaacccccccccccc37cc08999990089908990899089908990099000000008999999089908990ccd777ccccccccc83aaccccc
-ccccccccb36bbbbbccccc888888a8888c7cccccccc88c37c08998899089999990899089908999999000000008998880089999990cc7dd7cccccccc8c83baaccc
-cccccccc33333333cccccccccc8a8cccacccc7ccc833837c08990899089999900899089908999999000000008990000089999900cc7777ccccccccccc333bacc
-cccccccc00000000cccccccccc8a8cccccccccac83c337cc08800880088888000880088008888880000000008880000088888000ccc7dcccccccccccc8383bac
+ccccccccbbbbbb3688888888888a8888c9cccccccccccccc00990099009900990099999000099999000000000999999009900990ccc77ccccccccaa3333c38cc
+ccccccccbbbbb36baaaaa8aaaa8a8aaaccacccc9cccc33cc08990899089908990899999900999999000000008999999089908990cc7dd7ccccccc833883833cc
+ccccccccbbbb36bbccccc8a88a8a8a88ccc7ccacccc3333c08999999089908990899889908998880000000008998880089908990cc7777cccccc8c833333c7cc
+ccccccccbbb36bbbccccc8a8888a8888ccccc7ccccc37ccc08999990089908990899089908990000000000008999999089908990ccc7dcccccccc8c83ac7cccc
+ccccccccbb36bbbbccccc8aaaa8a8aaacc7ccccccccc37cc08999990089908990899089908990099000000008999999089908990ccd777ccccccccc83aaccccc
+ccccccccb36bbbbbccccc888888a8888cacc7ccccc88c37c08998899089999990899089908999999000000008998880089999990cc7dd7cccccccc8c83baaccc
+cccccccc33333333cccccccccc8a8ccc9ccccaccc833837c08990899089999900899089908999999000000008990000089999900cc7777ccccccccccc333bacc
+cccccccc00000000cccccccccc8a8ccccccccc9c83c337cc08800880088888000880088008888880000000008880000088888000ccc7dcccccccccccc8383bac
 ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8ccccccccccccd77cccccc77ccccccccccccc383bac
 4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aacc8888ccccc7dd7cccc7dd7cccccccc8cc833bbac
 ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777cc9998cccc7777cccc7777cccccc8c8ccc3bbacc
