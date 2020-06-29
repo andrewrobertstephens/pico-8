@@ -22,14 +22,14 @@ mode_complete=4
 mode_death=5
 mode_gameover=6
 mode_win=7
-level_size=128
-boss_threshold=28
+level_size=2
+boss_threshold=16
 logfile="kungfu"
 debug=true
 test_mode=true
 
 intro_timer=160
-current_level=1
+current_level=2
 camera_x=level_size*8
 camera_y=baseline-66
 level_timer=2000
@@ -202,9 +202,16 @@ end
 
 
 function draw_level()
-	for i=0,level_size*8 do
+	for i=0,level_size/4*8 do
 		local x=i*8*4
 		map(0,0,x,24,4,10)
+	end
+	for i=0,5 do
+		if current_level%2==0 then
+			spr(81,level_size*8-i*8,33+i*8,1,1,true)
+		else
+			spr(81,i*8,33+i*8,1,1)
+		end
 	end
 end
 
@@ -276,13 +283,13 @@ end
 function test_input()
 	local key=stat(31)
 	if key=="1" then
-		new_enemy(0,0)
+		new_enemy(0,32)
 	elseif key=="2" then
-		new_enemy(1,0)
+		new_enemy(1,32)
 	elseif key=="3" then
-		new_enemy(2,0)
+		new_enemy(2,32)
 	elseif key=="4" then
-		new_enemy(3,0)
+		new_enemy(3,32)
 	end
 end
 
@@ -412,7 +419,8 @@ function update_enemies()
 			enemy.body.height=4
 		end
 		
-		if collision(player.hitbox,enemy.body) and (player.punching>5 or player.kicking>5) then
+		if collision(player.hitbox,enemy.body) and 
+				(player.punching==9 or player.kicking==9) then
 			player.strike_hit=3
 			enemy.health-=1
 			sfx(-1)
@@ -489,34 +497,41 @@ function update_knife_guy(enemy)
 
 	enemy.sprite=128
 	enemy.facing=enemy.direction
-	
-	if enemy.dead==true then
-		enemy.sprite=140
-	elseif enemy.direction==right then
+
+	if enemy.direction==right then
 		target=player.x-32
 	elseif enemy.direction==left then
 		target=player.x+32
 	end
 	
-	if enemy.throwing>0 then
-		if enemy.throwing==1 then
-			if enemy.attack_height==up then
-				new_projectile(knife,enemy.x,player.y,2*enemy.direction,0)
-				enemy.attack_height=down
-				enemy.sprite=134
-			else
-				new_projectile(knife,enemy.x,player.y+8,2*enemy.direction,0)
-				enemy.attack_height=up
-				enemy.sprite=136
-			end
-			enemy.throwing-=1
-		elseif enemy.throwing<8 then
+	if enemy.dead==true then
+		enemy.sprite=140
+
+	elseif enemy.throwing>0 then
+		if enemy.throwing>=5 then
 			enemy.sprite=132
-		elseif enemy.throwing<5 then
+		else
 			enemy.sprite=134
 		end
+		if enemy.attack_height==down then
+			enemy.sprite+=4
+		end
+		if enemy.throwing==5 then
+			local y=enemy.y-2
+			if enemy.attack_height==down then
+				y+=10
+			end
+			new_projectile(knife,enemy.x,y,2*enemy.direction,0)
+		end
+		if enemy.throwing==1 then
+			enemy.attack_height*=-1
+		end
 		enemy.throwing-=1
-	elseif enemy.cooldown<1 then
+		
+	elseif enemy.cooldown>0 then
+		enemy.cooldown-=1
+	
+	else
 		if enemy.x<target-8 then
 			enemy.sprite+=enemy.w_index*2
 			enemy.x+=enemy.speed
@@ -529,8 +544,7 @@ function update_knife_guy(enemy)
 			enemy.throwing=10
 			enemy.cooldown=50
 		end
-	else
-		enemy.cooldown-=1
+	
 	end
 	
 end
@@ -578,6 +592,7 @@ function init_player()
 		x=0
 		direction=right
 	end
+	x=8*level_size+112
 	player={
 		x=x,
 		y=baseline,
@@ -614,7 +629,7 @@ function init_player()
 		width=8,
 		height=16,
 		hurt=0,
-		jump_max=16,
+		jump_max=20,
 		jump_dir=0,
 		tile_size=2
 	}
@@ -623,7 +638,7 @@ end
 
 function draw_player()
 	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
-	--[[
+	
 	rectfill(
 		player.body.x,
 		player.body.y,
@@ -631,7 +646,7 @@ function draw_player()
 		player.body.y+player.body.height-1,
 		15		
 	)
-	]]
+	
 	--[[
 	rectfill(
 			player.hitbox.x,
@@ -775,6 +790,11 @@ function update_player()
 
 		player.body.x=player.x+4
 		player.body.y=player.y
+		player.body.height=16
+		if player.position==down then
+			player.body.y+=8
+			player.body.height=8
+		end
 
 		if player.direction==right then
 			player.hitbox.x=player.x+16
@@ -791,7 +811,9 @@ function update_player()
 			player.hurt-=1
 		end		
 		if player.health<=0 then
-			change_mode(mode_death)
+			if test_mode==false then
+				change_mode(mode_death)
+			end
 		end
 
 	elseif game_mode==mode_death then
@@ -915,6 +937,8 @@ function update_projectiles()
 		if projectile.direction==left then
 			projectile.flip_x=true
 		end
+		projectile.body.x=projectile.x
+		projectile.body.y=projectile.y
 		if collision(projectile.body,player.body) then
 			player.hurt=5
 			player.health-=10
@@ -963,6 +987,21 @@ end
 
 
 
+-->8
+-- todo
+
+--[[
+
+	small guy attacks
+	stick guy attacks
+	mr. x everything
+	snakes
+	dragons
+	bees?
+	walking up stairs mode
+	calculating score mode
+
+]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
@@ -1007,21 +1046,21 @@ cccccccc00000000cccccccccc8a8ccccccccccc83c337cc08800880088888000880088008888880
 ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8ccccccccccccd77cccccc77ccccccccccccc383bac
 4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aacc8888ccccc7dd7cccc7dd7cccccccc8cc833bbac
 ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777cc9998cccc7777cccc7777cccccc8c8ccc3bbacc
-ffffffffc444ffff8888888888888888ca3bb3acccc377ccbcc8cccbffbb88ffeeffeeff7ccccfcc8a77778ccc9198ccccd7ddccccc7dcccccccc8a8c3bbaccc
+ffffffff44ffffff8888888888888888ca3bb3acccc377ccbcc8cccbffbb88ffeeffeeff7ccccfcc8a77778ccc9198ccccd7ddccccc7dcccccccc8a8c3bbaccc
 44444444ccc555ccaaaaaaaaaaaaaaaacba33abccccc337cc8cccc8cfff88fffffeeffeeccfcccc7c8aaa777cc9999ccccd777ccccd777ccccc88aa338bacccc
 ffffffffcccc67ccccccccccccccccccc3baab3ccccccc37cb3cc3bcff88bbffffeeffeec7ffcf7ccc888aacccc998cccc7dd7cccc7dd7ccccccc8333baccccc
 ffffffffccccc67ccccccccccccccccccc3bb3ccc8888c373c8338c3c88ffbbcceffeefcc77cc77cccccc8cccccccccccc7777cccc7777cccccccccc3acccccc
 ffffffffcccccc67ccccccccccccccccccc33ccc83c3337cc3b88b3cccffffcccceeffccccc7ccccccccccccccccccccccc7ddccccc7dccccccccccccccccccc
-4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccccc2222cccccccccccccccccccccccc444ccccc444ccccc444cc4ccccccc
-8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999cccccccccccc2999cccccccccccccccccccccccc499ccccc499ccccc499ccc499cc9cc
+4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccccc2222cccccccccccccccccccccccc444ccccc444ccccc444cccccccccc
+8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999cccccccccccc2999cccccccccccccccccccccccc499ccccc499ccccc499cccc49c9ccc
 8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc2929cccccccccccc2929cccccccccccc2929cccccccc4cccccccccccccccc99cccccc99cccccc99cccc4983ccc
 8a8888a88a8888a844177777a8cccccccccccc9999cccccccccccc9999cccccccccccc9999ccccccc499ccccc99ccccccc388cccccc38cccccc83ccccc388ccc
-8a8aaaa88aaaa8a84417777ca8cccccccccccc299ccccccccccccc299ccccccccccccc299cccccccc4999cccc99ccccccc3989ccccc38cccccc8839cc3c8833c
-8a888888888888a8cc1ccccc88ccccccccccc2f222cccccccccccff22fccccccccccccff22ccccccc4499cffffccccccccc33cccccc93ccccccc3ccc9ccc3c3c
-8aaaaaaaaaaaaaa8cccccccccccccccccccccfff22ccccccccccfff222fcccccccccccff22cccccccc42222ffccccccccc3cc3ccccc3ccccccc3cccccccc3c88
-8888888888888888cccccccccccccccccccccfff2299ccccccccff2222fcccccccccccfff299ccccccff2222cccccccccc88c88cccc88cccccc88ccccccc88cc
-111111111122221188888888ccccccccccccccf99299ccccccccff2222f99ccccccccccfff9cccccccff2222ffcccccccccccccccccccccccccccccccccccccc
-11111111118e8811aaaaaaaaccccccccccccccf99fccccccccccf9922cc99cccccccccc2ff99ccccccff222ffffcccccccc44ccccc88cccccc8833cccccccccc
+8a8aaaa88aaaa8a84417777ca8cccccccccccc299ccccccccccccc299ccccccccccccc299cccccccc4999cccc99ccccccc3989ccccc38cccccc8839ccc38333c
+8a888888888888a8cc1ccccc88ccccccccccc2f222cccccccccccff22fccccccccccccff22ccccccc4499cffffcccccccc333cccccc93cccccc33ccccc3c3c3c
+8aaaaaaaaaaaaaa8cccccccccccccccccccccfff22ccccccccccfff222fcccccccccccfff2c99ccccc42222ffccccccccc3cc3ccccc3ccccccc3cccccc9c3c88
+8888888888888888cccccccccccccccccccccfff2299ccccccccff2222fccccccccccccffff99cccccff2222cccccccccc88c88cccc88cccccc88ccccccc88cc
+111111111122221188888888ccccccccccccccf99299ccccccccff2222f99cccccccccc2fffcccccccff2222ffcccccccccccccccccccccccccccccccccccccc
+11111111118e8811aaaaaaaaccccccccccccccf99fccccccccccf9922cc99ccccccccccfffccccccccff222ffffcccccccc44ccccc88cccccc8833cccccccccc
 1c1c1c1c118e8811ccccccccaaaaaaaacccccccfffccccccccccc99fffcccccccccccccfffccccccccffc2fff2fccccccc4994ccc38884ccccc3888ccc4c3c8c
 c1c1c1c1c18e8811cccccccc88888888cccccccfffccccccccccccfffffccccccccccccfffcccccccccf99ff2ffccccccc833cccc388394ccc33888cc493338c
 1ccc1ccc17888871ccccccccaaaaaaaaccccccffffcccccccccccffffffcccccccccccffffcccccccccc99ff29ffccccc88833ccc833394cccc338ccc493883c
@@ -1097,12 +1136,12 @@ __gff__
 0000000000000000000000000000020000000000000000000000000000000200020202020202020202020202020202000202020202020202020202020002020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 41414141414141414a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-42436372424363724a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-52535252525352524a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-40404040404040404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-40404040404040404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-40404040404040404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
-40404040404040404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+42436372424363725172727272724a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+52535252525352525251525252524a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+40404040404040404040514040404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+40404040404040404040405140404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+40404040404040404040404051404a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
+40404040404040404040404040514a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
 50505050505050504a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
 60616061616061604a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
 71707070414141414a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a
