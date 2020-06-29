@@ -1,338 +1,209 @@
 kungfu.p8 log
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
-draw player
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024

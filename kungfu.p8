@@ -14,17 +14,36 @@ down=1
 baseline=65
 gravity=2
 ticks=0
-
+mode_menu=0
+mode_intro=1
+mode_start=2
+mode_play=3
+mode_complete=4
+mode_death=5
+mode_gameover=6
+mode_win=7
+level_size=128
+boss_threshold=28
 logfile="kungfu"
+debug=true
+test_mode=true
+
+intro_timer=160
+current_level=1
+camera_x=level_size*8
+camera_y=baseline-66
+level_timer=2000
 
 
 function _init()
-	init_modes()
-	init_levels()
+	if debug then
+		poke(0x5f2d, 1)
+	end
 	init_player()
 	init_enemies()
 	init_projectiles()
-	change_mode(mode_menu)
+	init_scores()
+	change_mode(mode_play)
 	printh("kungfu.p8 log",logfile,true)
 end
 
@@ -49,15 +68,15 @@ function _draw()
 		cls(12)
 		draw_level()
 		draw_player()
-		local xc=get_camera_x()+64
-		center_print("level 1",xc,50,7,true)
+		local xc=camera_x+64
+		center_print("level "..current_level,xc,50,7,true)
 		draw_osd()
 	
 	elseif game_mode==mode_start then
 		cls(12)
 		draw_level()
 		draw_player()
-		local xc=get_camera_x()+64
+		local xc=camera_x+64
 		center_print("level 1",xc,50,7,true)
 		draw_osd()
 
@@ -67,6 +86,7 @@ function _draw()
 		draw_projectiles()
 		draw_player()	
 		draw_enemies()
+		draw_scores()
 		draw_osd()
 		
 	elseif game_mode==mode_death then
@@ -75,6 +95,7 @@ function _draw()
 		draw_projectiles()
 		draw_player()
 		draw_enemies()
+		draw_scores()
 		draw_osd()
 		
 	end
@@ -92,32 +113,60 @@ function _update()
 		end
 
 	elseif game_mode==mode_intro then
-		camera(64*8-128,player.y-66)
 		intro_timer-=1
 		update_player()
+		update_camera()
 		if intro_timer<0 then
 			change_mode(mode_start)
 		end
-		update_camera()
 
 	elseif game_mode==mode_start then
 		update_player()
 		update_camera()
+		start_timer-=1
+		if start_timer<1 then
+			change_mode(mode_play)
+		end
 	
 	elseif game_mode==mode_play then
-		if ticks%100==0 then
-			new_enemy_group()
+		if test_mode then
+			test_input()
+		else
+			if ticks%100==0 then
+				new_enemy_group()
+			end
 		end
 		update_enemies()
 		update_player()
 		update_projectiles()
+		update_scores()
 		update_camera()
+		level_timer-=0.5
 		
 	elseif game_mode==mode_death then
 		update_player()
 		
 	end
 	
+end
+
+
+function change_mode(mode)
+	game_mode=mode
+	if game_mode==mode_intro then
+		music(5)
+	elseif game_mode==mode_start then
+		init_enemies()
+		init_player()
+		init_projectiles()
+		init_scores()
+		start_timer=56
+		sfx(8)
+	elseif game_mode==mode_play then
+		music(0)
+	elseif game_mode==mode_death then
+		music(-1)	
+	end
 end
 
 
@@ -129,23 +178,15 @@ function center_print(text,xc,y,c)
 end
 
 
-function parse_rect(r)
-	local new_rect = {
-		x1=r.x,
-		y1=r.y,
-		x2=r.x+r.width-1,
-		y2=r.y+r.height-1,
-	}
-	if r.position~=nil then
-		if r.position==down then
-			new_rect.y1=new_rect.y1+r.height/2-1
-		end
-	end
-	return new_rect
-end
-
-
 function collision(r1,r2)
+	function parse_rect(r)
+		return {
+			x1=r.x,
+			y1=r.y,
+			x2=r.x+r.width-1,
+			y2=r.y+r.height-1,
+		}
+	end
 	local rect1=parse_rect(r1)
 	local rect2=parse_rect(r2)
 	return rect1.x1<rect2.x2 and
@@ -155,42 +196,57 @@ function collision(r1,r2)
 end
 
 
-function is_offscreen(r)
-	local cx=get_camera_x()
-	return 
-			(r.direction==left and r.x<cx-r.width) or
-			(r.direction==right and r.x>cx+127+r.width) or
-			r.y>127
-end
-
-
 function debug(message)
 	printh(message,"kungfu")
 end
 
 
+function draw_level()
+	for i=0,level_size*8 do
+		local x=i*8*4
+		map(0,0,x,24,4,10)
+	end
+end
+
+
 function draw_osd()
-	local camera_x = get_camera_x()
-	local camera_y = get_camera_y()
-	local x=camera_x+5
+	local x=camera_x+4
 	local y=camera_y+5
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
 
 	print("player:",x,y,8)
 	if player.health>0 then
-		rectfill(x+28,y,x+28+player.health,y+4,8)
+		rectfill(x+28,y,x+28+player.health/3,y+4,8)
 	end
 
 	print(" enemy:",x,y+8,9)
-	rectfill(x+28,y+8,x+28+50,y+12,9)
+	rectfill(x+28,y+8,x+28+50/3,y+12,9)
 
-	draw_osd_level(x+85,y)
-	print("life:1",x+85,y+8,7)
+	draw_osd_level(x+50,y)
+	print("life:1",x+55,y+8,7)
+
+	print("000000",x+91,y,7)
+	print("time:"..flr(level_timer),x+85,y+8,7)
+
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
+	
+	if debug then
+		draw_osd_debug()
+	end
 
+end
+
+
+function draw_osd_debug()
 	--print(tostr(player.grabbed),camera_x,camera_y,7)
 	--print(#projectiles,camera_x,camera_y+106,7)
 	--print(player.health,camera_x,camera_y+106,7)
+	--print(#scores,camera_x,camera_y+106,7)
+	cursor(camera_x,camera_y+106)
+	color(7)
+	--print('camera_x='..camera_x)
+	--print('camera_y='..camera_y)
+	print('keyboard='..stat(31))
 end
 
 
@@ -208,41 +264,39 @@ function draw_osd_level(x,y)
 end
 
 
-function start_level()
-	game_mode=mode_start
-	player.x=64*128-8
-	player.y=baseline
+function is_offscreen(r)
+	local cx=camera_x
+	return 
+			(r.direction==left and r.x<cx-r.tile_size*8) or
+			(r.direction==right and r.x>cx+127+r.tile_size*8) or
+			r.y>127
 end
 
 
-function strike_collision(hitbox,enemy)
-	return hitbox.x<enemy.x2-2 and
-   hitbox.x2>enemy.x+2 and
-   hitbox.y<enemy.y2-2 and
-   hitbox.y2>enemy.y+2	
-end
--->8
--- camera
-
-
-function get_camera_x()
-	return peek2(0x5f28)
-end
-
-
-function get_camera_y()
-	return peek2(0x5f2a)
+function test_input()
+	local key=stat(31)
+	if key=="1" then
+		new_enemy(0,0)
+	elseif key=="2" then
+		new_enemy(1,0)
+	elseif key=="3" then
+		new_enemy(2,0)
+	elseif key=="4" then
+		new_enemy(3,0)
+	end
 end
 
 
 function update_camera()
-	camera(player.x-60,baseline-66)
-	local camera_x = peek2(0x5f28)
+	camera_x=player.x-56
+	camera_y=baseline-66
 	if camera_x<0 then
-		camera(0,baseline-66)
-	elseif camera_x>384 then
-		camera(384,baseline-66)
+		camera_x=0
+	elseif camera_x>level_size*8 then
+		camera_x=level_size*8
 	end
+	camera(camera_x,camera_y)
+	debug(camera_x)
 end
 -->8
 -- enemies
@@ -255,19 +309,28 @@ function init_enemies()
 	grab_guy=0
 	knife_guy=1
 	small_guy=2
+	stick_guy=3
 end
 
 
 function draw_enemies()
 	for enemy in all(enemies) do
-		spr(enemy.sprite,enemy.x,enemy.y,enemy.size,enemy.size,enemy.flip_x)
+		spr(
+				enemy.sprite,
+				enemy.x,
+				enemy.y,
+				enemy.tile_size,
+				enemy.tile_size,
+				enemy.flip_x
+		)
 	end
 end
 
 
-function new_enemy(kind,stagger)
-	local camera_x = get_camera_x()
-	local direction=flr(rnd(2))
+function new_enemy(kind,stagger,direction)
+	if direction==nil then
+		local direction=flr(rnd(2))
+	end
 	enemy={
 		kind=kind,
 		y=baseline,
@@ -283,19 +346,21 @@ function new_enemy(kind,stagger)
 		throwing=0,
 		attack_height=up,
 		cooldown=0,
-		width=8,
-		height=16,
+		tile_size=2,
+		body={
+			x=x,
+			y=y,
+			width=8,
+			height=16,
+		},
+		direction=right,
 	}
-	if direction>0 then
-		enemy.direction=right
-	else
-		enemy.direction=left
-	end
 	if enemy.kind==knife_guy then
 		enemy.health=2
 	elseif enemy.kind==small_guy then
 		enemy.y+=8
 		enemy.height=8
+		enemy.tile_size=1
 	end
 	if enemy.direction==left then
 		enemy.x=player.x+64+stagger
@@ -307,16 +372,21 @@ end
 
 
 function new_enemy_group()
-	local total=3
-	for i=1,total-1 do
-		new_enemy(grab_guy,i*16)
-	end
-	if enemy_group_counter>2 then
-		new_enemy(knife_guy,total*16)
-		enemy_group_counter=0
+	if (current_level%2==0 and player.x>level_size-boss_threshold) or
+ 		player.x<boss_threshold then
+		new_enemy(stick_guy,0,right)
 	else
-		new_enemy(grab_guy,total*16)
-		enemy_group_counter+=1
+		local total=3
+		for i=1,total-1 do
+			new_enemy(grab_guy,i*16)
+		end
+		if enemy_group_counter>2 then
+			new_enemy(knife_guy,total*32)
+			enemy_group_counter=0
+		else
+			new_enemy(grab_guy,total*32)
+			enemy_group_counter+=1
+		end
 	end
 end
 
@@ -324,9 +394,6 @@ end
 function update_enemies()
 
 	for enemy in all(enemies) do
-	
-		enemy.x2=enemy.x+8*enemy.size
-		enemy.y2=enemy.y+8*enemy.size
 
 		if ticks%3==0 then
 			enemy.w_index+=1
@@ -335,7 +402,17 @@ function update_enemies()
 			end
 		end
 		
-		if collision(player.hitbox,enemy) and (player.punching>5 or player.kicking>5) then
+		enemy.body.x=enemy.x+4
+		enemy.body.y=enemy.y
+		enemy.body.width=8
+		enemy.body.height=16
+		
+		if enemy.position==down then
+			enemy.body.y+=4
+			enemy.body.height=4
+		end
+		
+		if collision(player.hitbox,enemy.body) and (player.punching>5 or player.kicking>5) then
 			player.strike_hit=3
 			enemy.health-=1
 			sfx(-1)
@@ -343,6 +420,7 @@ function update_enemies()
 		end
 		
 		if enemy.health<=0 then
+			new_score(enemy.x,enemy.y,100)
 			enemy.dead=true
 		end
 		
@@ -365,13 +443,15 @@ function update_enemies()
 		elseif enemy.kind==small_guy then
 			update_small_guy(enemy)	
 
+		elseif enemy.kind==stick_guy then
+			update_stick_guy(enemy)
+
 		end
 		
 		enemy.flip_x=false
 		if enemy.facing==left then
 			enemy.flip_x=true
 		end
-		
 
 		if is_offscreen(enemy) then
 			del(enemies,enemy)
@@ -390,7 +470,7 @@ function update_grab_guy(enemy)
 		enemy.sprite=104
 	else
 		enemy.sprite+=enemy.w_index*2
-		if collision(enemy,player) then
+		if collision(enemy.body,player.body) then
 			player.grabbed=5
 			player.jump_dir=0
 			enemy.grabbing=true
@@ -464,7 +544,7 @@ function update_small_guy(enemy)
 		enemy.sprite=110
 	else
 		enemy.sprite+=enemy.w_index*1
-		if collision_narrow(enemy,player) then
+		if collision(enemy.body,player.body) then
 			player.grabbed=10
 			enemy.grabbing=true
 		else
@@ -476,66 +556,34 @@ function update_small_guy(enemy)
 		end
 	end
 end
--->8
--- levels
 
-function init_levels()
-	current_level=1
-end
 
-function draw_level()
-	for i=0,63 do
-		local x=i*8*4
-		map(0,0,x,24,4,10)
+function update_stick_guy()
+	enemy.sprite=160
+	if enemy.dead then
+		enemy.sprite=172
+	else
+		enemy.x+=enemy.direction
+		enemy.sprite+=enemy.w_index*2
 	end
 end
--->8
--- modes
-
-
-function init_modes()
-	mode_menu=0
-	mode_intro=1
-	mode_start=2
-	mode_play=3
-	mode_complete=4
-	mode_death=5
-	mode_gameover=6
-	mode_win=7
-	intro_timer=160
-end
-
-
-function change_mode(mode)
-	game_mode=mode
-	if game_mode==mode_intro then
-		music(5)
-	elseif game_mode==mode_start then
-		init_enemies()
-		init_player()
-		init_projectiles()
-		sfx(8)
-	elseif game_mode==mode_play then
-		music(0)
-	elseif game_mode==mode_death then
-		music(-1)	
-	end
-end
--->8
-
 -->8
 -- player
 
 
 function init_player()
+	local x=8*level_size+112
+	local direction=left
+	if current_level%2==0 then
+		x=0
+		direction=right
+	end
 	player={
-		x=64*8-16,
+		x=x,
 		y=baseline,
-		x2=384+60+16,
-		y2=baseline+16,
 		walking=false,
 		w_index=0,
-		direction=left,
+		direction=direction,
 		position=up,
 		kicking=0,
 		punching=0,
@@ -546,6 +594,12 @@ function init_player()
 		btn5_down=false,
 		btnleft_down=false,
 		btnright_down=false,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=16
+		},
 		hitbox={
 			x=0,
 			y=0,
@@ -562,85 +616,38 @@ function init_player()
 		hurt=0,
 		jump_max=16,
 		jump_dir=0,
+		tile_size=2
 	}
 end
 
 
 function draw_player()
-	debug('draw player')
-	spr(player.sprite,player.x,player.y,2,2,player.flip_x)	
+	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
+	--[[
+	rectfill(
+		player.body.x,
+		player.body.y,
+		player.body.x+player.body.width-1,
+		player.body.y+player.body.height-1,
+		15		
+	)
+	]]
+	--[[
+	rectfill(
+			player.hitbox.x,
+			player.hitbox.y,
+			player.hitbox.x+player.hitbox.width-1,
+			player.hitbox.y+player.hitbox.height-1,
+			0
+	)
+	]]
 	if player.strike_hit>0 then
-		spr(68,player.hitbox.x-2,player.hitbox.y-2)
+		spr(68,player.hitbox.x-2,player.hitbox.y)
 	end
-	rectfill(player.hitbox.x,player.hitbox.y,player.hitbox.x+player.hitbox.width-1,player.hitbox.y+player.hitbox.height-1,10)
 end
 
 
 function get_player_input()
-	if btn(⬅️) and player.jumping==0 then
-		player.direction=left
-	elseif btn(➡️) and player.jumping==0 then
-		player.direction=right
-	end
-	if btn(⬇️) then
-		player.position=down
-	elseif player.punching==0 and player.kicking==0 then
-		player.position=up
-	end
-	if btn(⬆️) then
-		if player.btnup_down==false then
-			if player.y==baseline then
-				player.jumping=player.jump_max
-			end
-			player.jump_dir=0
-			if btn(⬅️) then
-				player.jump_dir=left
-			elseif btn(➡️) then
-				player.jump_dir=right
-			end
-		end
-		player.btnup_down=true
-	else
-		player.btnup_down=false
-	end
-	if btn(4) and player.grabbed<1 then
-		if player.btn4_down==false then
-			player.kicking=10
-			sfx(9)
-		end
-		player.btn4_down=true
-	else
-		player.btn4_down=false
-	end
-	if btn(5) and player.grabbed<1 then
-		if player.btn5_down==false then
-			player.punching=10
-			sfx(9)
-		end
-		player.btn5_down=true
-	else
-		player.btn5_down=false
-	end
-	if btn(⬅️) and 
-			player.jumping<1 and
-			player.kicking<1 and 
-			player.punching<1 and 
-			player.grabbed<1 and 
-			player.position==up then
-		player.x-=player.speed
-		player.walking=true
-	elseif btn(➡️) and 
-			player.jumping<1 and
-			player.kicking<1 and 
-			player.punching<1 and 
-			player.grabbed<1 and
-			player.position==up then
-		player.x+=player.speed
-		player.walking=true
-	else
-		player.walking=false
-		player.w_index=0
-	end
 end
 
 
@@ -655,14 +662,75 @@ function update_player()
 	
 	if game_mode==mode_start then
 		player.walking=true
-		player.x-=player.speed
-		if player.x<64*8-1-56 then
-			change_mode(mode_play)
-		end
+		player.x+=player.speed*player.direction
 		
 	elseif game_mode==mode_play then
 		player.last_direction=player.direction
-		get_player_input()
+		if btn(⬅️) and player.jumping==0 then
+			player.direction=left
+		elseif btn(➡️) and player.jumping==0 then
+			player.direction=right
+		end
+		if btn(⬇️) then
+			player.position=down
+		elseif player.punching==0 and player.kicking==0 then
+			player.position=up
+		end
+		if btn(⬆️) then
+			if player.btnup_down==false then
+				if player.y==baseline then
+					player.jumping=player.jump_max
+				end
+				player.jump_dir=0
+				if btn(⬅️) then
+					player.jump_dir=left
+				elseif btn(➡️) then
+					player.jump_dir=right
+				end
+			end
+			player.btnup_down=true
+		else
+			player.btnup_down=false
+		end
+		if btn(4) and player.grabbed<1 then
+			if player.btn4_down==false then
+				player.kicking=10
+				sfx(9)
+			end
+			player.btn4_down=true
+		else
+			player.btn4_down=false
+		end
+		if btn(5) and player.grabbed<1 then
+			if player.btn5_down==false then
+				player.punching=10
+				sfx(9)
+			end
+			player.btn5_down=true
+		else
+			player.btn5_down=false
+		end
+		if btn(⬅️) and 
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and 
+				player.position==up then
+			player.x-=player.speed
+			player.walking=true
+		elseif btn(➡️) and 
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and
+				player.position==up then
+			player.x+=player.speed
+			player.walking=true
+		else
+			player.walking=false
+			player.w_index=0
+		end
+
 		if player.last_direction!=player.direction then
 			player.grabbed-=1
 			if player.grabbed<0 then
@@ -704,15 +772,21 @@ function update_player()
 		if player.jumping<0 then
 			player.jumping=0
 		end
+
+		player.body.x=player.x+4
+		player.body.y=player.y
+
 		if player.direction==right then
-			player.hitbox.x=player.x+12
+			player.hitbox.x=player.x+16
 		else
-			player.hitbox.x=player.x
+			player.hitbox.x=player.x-4
 		end
-		player.hitbox.position=player.position
-		if player.jumping>0 and player.kicking>0 then
-			player.hitbox.position=down
+		player.hitbox.y=player.y
+		
+		if player.strike_hit>0 then
+			player.strike_hit-=1
 		end
+
 		if player.hurt>0 then
 			player.hurt-=1
 		end		
@@ -727,7 +801,7 @@ function update_player()
 			player.x-=gravity/2
 		end
 		player.y+=gravity
-		if player.y>get_camera_y()+128 then
+		if player.y>camera_y+128 then
 			change_mode(mode_start)
 		end
 
@@ -814,9 +888,13 @@ function new_projectile(kind,x,y,xspeed,yspeed)
 		y=y,
 		xspeed=xspeed,
 		yspeed=yspeed,
-		size=1,
-		width=7,
-		height=3,
+		body={
+			x=x,
+			y=y,
+			width=4,
+			height=4
+		},
+		tile_size=1,
 		direction=right,
 	}
 	if xspeed<0 then
@@ -837,7 +915,7 @@ function update_projectiles()
 		if projectile.direction==left then
 			projectile.flip_x=true
 		end
-		if collision(projectile,player) then
+		if collision(projectile.body,player.body) then
 			player.hurt=5
 			player.health-=10
 			del(projectiles,projectile)
@@ -846,6 +924,44 @@ function update_projectiles()
 		end
 	end	
 end
+
+-->8
+-- scores
+
+
+function init_scores()
+	scores={}
+end
+
+
+function draw_scores()
+ for score in all(scores) do
+		print(n,x,y,7)
+ end
+end
+
+
+function new_score(x,y,n)
+	local score={
+		x=x,
+		y=y,
+		n=n,
+		count=30
+	}
+	add(scores,score)
+end
+
+
+function update_scores()
+	for score in all(scores) do
+		score.count-=1
+		if score.count<1 then
+ 		del(scores,score)
+ 	end
+	end
+end
+
+
 
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -859,35 +975,35 @@ cccc9007770cccccccccc0097ccccccccccccc7009cccccccccc0099809cccccccc0007798877ccc
 cccc99777c99ccccccccc09988cccccccccccc70999ccccccccc099887cccccccccc09999878cccccccccc7799cccccccccccccc7777ccccccccc00790cccccc
 ccccc9988cc99ccccccccc99878ccccccccccc888999ccccccccc987787cccccccccc999877cccccccccccc8888cccccccccccc8888ccccccccc0077770ccccc
 ccccc79978ccccccccccccc997cccccccccccc7777cccccccccccc777777ccccccccccc777ccccccccccccc77878ccccccccccc77777cccccccc0077770ccccc
-cccccc67777cccccccccccc777cccccccccccc77777ccccccccccc777c77ccccccccccc777cccccccccccc777c777ccccccccc777c777ccccccc9958899ccccc
-ccccc776677cccccccccccc777ccccccccccc777c77cccccccccc7777c99cccccccccccc77ccccccccccc777ccc77cccccccc777ccc77cccccccc998798ccccc
-cccc777cc777cccccccccc777ccccccccccc777cc777cccccccc0977cc000ccccccccccc777ccccccccc777ccc777ccccccc777ccc777ccccccc77977777cccc
-ccc099cccc99cccccccccc99ccccccccccc099cccc99cccccccc09ccccccccccccccccccc99ccccccccc99cccc99cccccccc99cccc99cccccccc997cc799cccc
-ccc0000ccc000ccccccccc000cccccccccc0000ccc000ccccccc0ccccccccccccccccccc000ccccccccc000ccc000ccccccc000ccc000cccccc000cccc000ccc
-ccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000cccccccccccccc0000cccccccccccccccccccccccccc0000ccccccccccccccccccccc
-ccccccccccccccccccccccccccccccccccccccc00ccccccccccccc0999cccccccccccccc0999cccccccccccccccccccccccccc0999cccccccccccccccccccccc
-cccccccccccccccccccccccccccccccccccccc0095cccccccccccc0919cccccccccccccc0919cccccccccccccccccccccccccc0919ccccccccc0cccccccccccc
-ccccccccccccccccccccccccc0000ccccccccc0999cccccccccccc9999ccccccccccccccc999cccccccccccccccccccccccccc9999cccccccc099ccccc99cccc
-ccccccc0000ccccccccccccc0999cccccccccc799ccccccccccccc799cccccc0cccccccc07700999ccccccc0000ccccccccccc799ccccccccc0999cccc99cccc
-cccccc0999cccccccccccccc0919ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9cccccc0999ccccccccccc70777cccccccc0099c0099ccccc
-cccccc0919ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700cccccccccc0919ccccccccccc00797ccccccccc0777709cccccc
-ccccccc999cc9ccccccccccc07700999cccc90077799ccccccccc0099887777ccccccccc7777ccccccccccc999ccccccccccc009988cccccccc000777ccccccc
-cccccc00779c9cccccccccc0770009c9ccc990888cc99cccccccc099887877ccccccccc8888cccccccccc00790ccccccccccc0998877ccccccc00077877ccccc
-ccccc70009909cccccccccc07700ccccccc9cc7878c99ccccccccc9877779cccccccccc77777cccccccc0077770ccccccccccc9877877cccccc007787777cccc
-ccccc70999099ccccccccccc7777ccccccc99c777cccccccccccccc7777cc9cccccccc777777cccccccc0077770cccccccccccc777777cccccc990877767cccc
-cccccc889987ccccccccccc8888cccccccccccc777cccccccccccccc777ccccccccccc777099cccccccc9958899cccccccccccc777099ccccccc99977077cccc
-cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000cccccccc9987987cccccccccc7777c000ccccccc99770977ccc
-cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777ccccccc0977cccccccccccccccc09777cc
-ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990ccccc09cccccccccccccccccc0c7099c
-ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000ccccc0cccccccccccccccccccccc0000
-ccccccccbbbbbb3688888888888a8888c9cccccccccccccc00990099009900990099999000099999000000000999999009900990ccc77ccccccccaa3333c38cc
-ccccccccbbbbb36baaaaa8aaaa8a8aaaccacccc9cccc33cc08990899089908990899999900999999000000008999999089908990cc7dd7ccccccc833883833cc
-ccccccccbbbb36bbccccc8a88a8a8a88ccc7ccacccc3333c08999999089908990899889908998880000000008998880089908990cc7777cccccc8c833333c7cc
-ccccccccbbb36bbbccccc8a8888a8888ccccc7ccccc37ccc08999990089908990899089908990000000000008999999089908990ccc7dcccccccc8c83ac7cccc
-ccccccccbb36bbbbccccc8aaaa8a8aaacc7ccccccccc37cc08999990089908990899089908990099000000008999999089908990ccd777ccccccccc83aaccccc
-ccccccccb36bbbbbccccc888888a8888cacc7ccccc88c37c08998899089999990899089908999999000000008998880089999990cc7dd7cccccccc8c83baaccc
-cccccccc33333333cccccccccc8a8ccc9ccccaccc833837c08990899089999900899089908999999000000008990000089999900cc7777ccccccccccc333bacc
-cccccccc00000000cccccccccc8a8ccccccccc9c83c337cc08800880088888000880088008888880000000008880000088888000ccc7dcccccccccccc8383bac
+cccccc67777cccccccccccc777cccccccccccc77777cccccccccccc77c77ccccccccccc777cccccccccccc777c777ccccccccc777c777ccccccc9958899ccccc
+ccccc776677cccccccccccc777ccccccccccc777c77ccccccccccc777c99cccccccccccc77ccccccccccc777ccc77cccccccc777ccc77cccccccc998798ccccc
+cccc777cc777cccccccccc777ccccccccccc777cc777cccccccccc77cc000ccccccccccc777ccccccccc777ccc777ccccccc777ccc777ccccccc77977777cccc
+ccc099cccc99cccccccccc99ccccccccccc099cccc99cccccccccc99ccccccccccccccccc99ccccccccc99cccc99cccccccc99cccc99cccccccc997cc799cccc
+ccc0000ccc000ccccccccc000cccccccccc0000ccc000ccccccccc000ccccccccccccccc000ccccccccc000ccc000ccccccc000ccc000cccccc000cccc000ccc
+ccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000cccccccccccccc0000ccccccccccccccccccccccccc0000cccccccccccccccccccccc
+ccccccccccccccccccccccccccccccccccccccc00ccccccccccccc0999cccccccccccccc0999ccccccccccccccccccccccccc0999ccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccc0095cccccccccccc0919cccccccccccccc0919ccccccccccccccccccccccccc0919ccccccccc0ccccccccccccc
+ccccccccccccccccccccccccc0000ccccccccc0999cccccccccccc9999ccccccccccccccc999ccccccccccccccccccccccccc9999cccccccc099ccccc99ccccc
+ccccccc0000ccccccccccccc0999cccccccccc799ccccccccccccc799cccccc0cccccccc07700999ccccccc0000cccccccccc799ccccccccc0999cccc99ccccc
+cccccc0999cccccccccccccc0919ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9cccccc0999cccccccccc70777cccccccc0099c0099cccccc
+cccccc0919ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700cccccccccc0919cccccccccc00797ccccccccc0777709ccccccc
+ccccccc999cc9ccccccccccc07700999cccc90077799ccccccccc0099887777ccccccccc7777ccccccccccc999cccccccccc009988cccccccc000777cccccccc
+cccccc00779c9cccccccccc0770009c9ccc990888cc99cccccccc099887877ccccccccc8888cccccccccc00790cccccccccc0998877ccccccc00077877cccccc
+ccccc70009909cccccccccc07700ccccccc9cc7878c99ccccccccc9877779cccccccccc77777cccccccc0077770cccccccccc9877877cccccc007787777ccccc
+ccccc70999099ccccccccccc7777ccccccc99c777cccccccccccccc7777cc9cccccccc777777cccccccc0077770ccccccccccc777777cccccc990877767ccccc
+cccccc889987ccccccccccc8888cccccccccccc777cccccccccccccc777ccccccccccc777099cccccccc9958899ccccccccccc777099ccccccc99977077ccccc
+cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000cccccccc9987987ccccccccc7777c000ccccccc99770977cccc
+cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777cccccc0977cccccccccccccccc09777ccc
+ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990cccc09cccccccccccccccccc0c7099cc
+ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000cccc0cccccccccccccccccccccc0000c
+ccccccccbbbbbb3688888888888a8888cccccccccccccccc00990099009900990099999000099999000000000999999009900990ccc77ccccccccaa3333c38cc
+ccccccccbbbbb36baaaaa8aaaa8a8aaacccccccccccc33cc08990899089908990899999900999999000000008999999089908990cc7dd7ccccccc833883833cc
+ccccccccbbbb36bbccccc8a88a8a8a88ccc7ccccccc3333c08999999089908990899889908998880000000008998880089908990cc7777cccccc8c833333c7cc
+ccccccccbbb36bbbccccc8a8888a8888ccc777ccccc37ccc08999990089908990899089908990000000000008999999089908990ccc7dcccccccc8c83ac7cccc
+ccccccccbb36bbbbccccc8aaaa8a8aaacc777ccccccc37cc08999990089908990899089908990099000000008999999089908990ccd777ccccccccc83aaccccc
+ccccccccb36bbbbbccccc888888a8888cccc7ccccc88c37c08998899089999990899089908999999000000008998880089999990cc7dd7cccccccc8c83baaccc
+cccccccc33333333cccccccccc8a8cccccccccccc833837c08990899089999900899089908999999000000008990000089999900cc7777ccccccccccc333bacc
+cccccccc00000000cccccccccc8a8ccccccccccc83c337cc08800880088888000880088008888880000000008880000088888000ccc7dcccccccccccc8383bac
 ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8ccccccccccccd77cccccc77ccccccccccccc383bac
 4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aacc8888ccccc7dd7cccc7dd7cccccccc8cc833bbac
 ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777cc9998cccc7777cccc7777cccccc8c8ccc3bbacc
