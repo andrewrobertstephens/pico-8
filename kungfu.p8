@@ -1,11 +1,15 @@
 pico-8 cartridge // http://www.pico-8.com
 version 27
 __lua__
--- main
+-- ===================
+-- kung fu
+-- andrew stephens
+-- june 2020
+-- version 0.1
+-- ===================
 
 palt(0,false)
 palt(12,true)
-
 
 left=-1
 right=1
@@ -28,23 +32,23 @@ level_size=64
 boss_threshold=64
 logfile="kungfu"
 debug=true
-test_mode=true
+test_mode=false
+level_timer=2000
 
 intro_timer=160
 current_level=1
-
-level_timer=2000
-
 
 function _init()
 	if debug then
 		poke(0x5f2d,1)
 	end
+	--[[
 	init_camera()
 	init_player()
 	init_enemies()
 	init_projectiles()
 	init_scores()
+	]]
 	if test_mode then
 		change_mode(mode_play)
 	else
@@ -53,146 +57,53 @@ function _init()
 	printh("kungfu.p8 log",logfile,true)
 end
 
+function _update()
+	ticks=ticks+1
+	if game_mode==mode_menu then
+		mode_menu_update()
+	elseif game_mode==mode_intro then
+		mode_intro_update()
+	elseif game_mode==mode_start then
+		mode_start_update()
+	elseif game_mode==mode_play then
+		mode_play_update()
+	elseif game_mode==mode_death then
+		mode_death_update()
+	elseif game_mode==mode_complete then
+		mode_complete_update()
+	end
+end
 
 function _draw()	
-	
 	if game_mode==mode_menu then
-		cls(0)
-		local y=32
-		for i=0,112,16 do
-			spr(96,i,y)
-			spr(96,i,y+20)
-			spr(97,i+8,y)
-			spr(97,i+8,y+20)
-		end
-		spr(70,64-7*8/2,y+10,7,1)
-		center_print("press 🅾️+❎ to start",64,y+40,7)
-		spr(78,5,68,2,2)
-		spr(78,106,68,2,2,true)
-		
+		mode_menu_draw()
 	elseif game_mode==mode_intro then
-		cls(12)
-		draw_level()
-		draw_player()
-		camera(camera_x,camera_y)
-		local xc=camera_x+64
-		center_print("level "..current_level,xc,50,7,true)
-		draw_osd()
-	
+		mode_intro_draw()
 	elseif game_mode==mode_start then
-		cls(12)
-		draw_level()
-		draw_player()
-		local xc=camera_x+64
-		center_print("level "..current_level,xc,50,7,true)
-		draw_osd()
-
+		mode_start_draw()
 	elseif game_mode==mode_play then
-		cls(12)
-		draw_level()
-		draw_projectiles()
-		draw_player()	
-		draw_enemies()
-		draw_scores()
-		draw_osd()
-		
+		mode_play_draw()
 	elseif game_mode==mode_death then
-		cls(12)
-		draw_level()
-		draw_projectiles()
-		draw_player()
-		draw_enemies()
-		draw_scores()
-		draw_osd()
-		
+		mode_death_draw()
+	elseif game_mode==mode_complete then
+		mode_complete_draw()
 	end
-	
 end
-
-
-function _update()
-
-	ticks=ticks+1
-	
-	if game_mode==mode_menu then
-		if btn(4) and btn(5) then
-			change_mode(mode_intro)
-		end
-
-	elseif game_mode==mode_intro then
-		intro_timer-=1
-		update_player()
-		--update_camera()
-		if intro_timer<0 then
-			change_mode(mode_start)
-		end
-
-	elseif game_mode==mode_start then
-		update_player()
-		--update_camera()
-		start_timer-=1
-		if start_timer<1 then
-			change_mode(mode_play)
-		end
-	
-	elseif game_mode==mode_play then
-		if test_mode then
-			test_input()
-		else
-			if ticks%100==0 then
-				new_enemy_group()
-			end
-		end
-		update_enemies()
-		update_player()
-		update_projectiles()
-		update_scores()
-		update_camera()
-		level_timer-=0.5
-		
-	elseif game_mode==mode_death then
-		update_player()
-		
-	end
-	
-end
-
-function get_boss()
-	for enemy in all(enemies) do
-		if enemy.boss then
-			return enemy
-		end
-	end
-	return nil
-end
-
-function is_offscreen(r)
-	local cx=camera_x
-	return 
-			(r.direction==left and r.x<cx-r.tile_width*8) or
-			(r.direction==right and r.x>cx+127+r.tile_width*8) or
-			r.y>127
-end
-
 
 function change_mode(mode)
 	game_mode=mode
 	if game_mode==mode_intro then
-		music(5)
+		mode_intro_init()
 	elseif game_mode==mode_start then
-		init_enemies()
-		init_player()
-		init_projectiles()
-		init_scores()
-		start_timer=56
-		sfx(8)
+		mode_start_init()
 	elseif game_mode==mode_play then
-		music(0)
+		mode_play_init()
 	elseif game_mode==mode_death then
-		music(-1)	
+		mode_death_init()
+	elseif game_mode==mode_complete then
+		mode_complete_init()
 	end
 end
-
 
 function center_print(text,xc,y,c)
 	local w=#text*4
@@ -200,7 +111,6 @@ function center_print(text,xc,y,c)
 	rectfill(x-1,y-1,x+w-1,y+5,0)
 	print(text,x,y,c)
 end
-
 
 function collision(r1,r2)
 	function parse_rect(r)
@@ -219,29 +129,70 @@ function collision(r1,r2)
   rect1.y2>rect2.y1
 end
 
-
-
-
+-- ================
+-- levels
+-- ================
 
 function draw_level()
 	for i=0,(level_size-1)/4 do
 		local x=i*8*4
 		map(0,0,x,24,4,10)
 	end
-	for i=0,5 do
+		for i=0,5 do
 		if current_level%2==0 then
-			spr(81,(level_size-1)*8-i*8,33+i*8,1,1,true)
+			spr(81,(level_size-1)*8-i*8,33+i*8,1,1,true)			
 		else
 			spr(81,i*8,33+i*8,1,1)
 		end
 	end
 end
 
+function is_offscreen(r)
+	local cx=camera_x
+	return 
+			(r.direction==left and r.x<cx-r.tile_width*8) or
+			(r.direction==right and r.x>cx+127+r.tile_width*8) or
+			r.y>127
+end
 
+-- ===================
+-- camera
+-- ===================
 
--->8
+function init_camera()
+	if test_mode then
+		camera_x=64
+	else
+		if current_level%2==0 then
+			camera_x=0
+		else
+			camera_x=(level_size-1)*8-128
+		end
+	end
+	camera_y=baseline-66
+end
+
+function update_camera(x,y)
+	camera_x=player.x-56	
+	camera_y=baseline-66
+	if camera_x<48 then
+		camera_x=48
+	elseif camera_x>level_size*8-176 then
+		camera_x=level_size*8-176
+	end	
+	-- manual override
+	if x~=nil then
+		camera_x=x
+	end
+	if y~=nil then
+		camera_y=y
+	end
+	camera(camera_x,camera_y)
+end
+
+-- ===================
 -- enemies
-
+-- ===================
 
 function init_enemies()
 	enemies={}
@@ -252,7 +203,6 @@ function init_enemies()
 	small_guy=2
 	stick_guy=3
 end
-
 
 function draw_enemies()
 	for enemy in all(enemies) do
@@ -276,11 +226,25 @@ function draw_enemies()
 	end
 end
 
-
 function new_enemy(kind,x,direction)
+
 	if direction==nil then
-		local direction=flr(rnd(2))
+		local d=flr(rnd(2))
+		if d==0 then
+			direction=left
+		else
+			direction=right
+		end
 	end
+
+	if x==nil then
+		if direction==left then
+			x=player.x-128
+		else
+			x=player.x+136
+		end
+	end
+
 	enemy={
 		kind=kind,
 		x=x,
@@ -304,7 +268,7 @@ function new_enemy(kind,x,direction)
 			width=8,
 			height=16,
 		},
-		direction=right,
+		direction=direction,
 		value=100,
 		swinging=0,
 		chain=0,
@@ -326,48 +290,22 @@ function new_enemy(kind,x,direction)
 	add(enemies,enemy)
 end
 
-
-function new_enemy_group()
-	if (current_level%2==0 and player.x>level_size-boss_threshold) or
- 		player.x<boss_threshold then
-		new_enemy(stick_guy,0,right)
-	else
-		local total=3
-		for i=1,total-1 do
-			new_enemy(grab_guy,camera_x-(i*16),right)
-		end
-		if enemy_group_counter>2 then
-			new_enemy(knife_guy,total*32)
-			enemy_group_counter=0
-		else
-			new_enemy(grab_guy,total*32)
-			enemy_group_counter+=1
-		end
-	end
-end
-
-
 function update_enemies()
-
 	for enemy in all(enemies) do
-
 		if ticks%3==0 then
 			enemy.w_index+=1
 			if enemy.w_index>1 then
 				enemy.w_index=0
 			end
 		end
-		
 		enemy.body.x=enemy.x+4
 		enemy.body.y=enemy.y
 		enemy.body.width=8
 		enemy.body.height=16
-		
 		if enemy.position==down then
 			enemy.body.y+=4
 			enemy.body.height=4
 		end
-		
 		if collision(player.hitbox,enemy.body) and 
 				(player.punching==9 or player.kicking==9) then
 			player.strike_hit=3
@@ -375,17 +313,15 @@ function update_enemies()
 			sfx(-1)
 			sfx(10)
 		end
-		
 		if enemy.health<=0 then
 			enemy.dead=true
 		end
-		
 		if enemy.dead==true then
 			if enemy.scored==false then
 				new_score(enemy.x,enemy.y-8,enemy.value)
 				enemy.scored=true
 			end
-			if enemy.direction==right then
+			if enemy.facing==right then
 				enemy.x-=gravity/2
 				enemy.y+=gravity
 			else
@@ -393,34 +329,24 @@ function update_enemies()
 				enemy.y+=gravity
 			end
 		end
-
 		if enemy.kind==grab_guy then
 			update_grab_guy(enemy)
-			
 		elseif enemy.kind==knife_guy then
 			update_knife_guy(enemy)			
-			
 		elseif enemy.kind==small_guy then
 			update_small_guy(enemy)	
-
 		elseif enemy.kind==stick_guy then
 			update_stick_guy(enemy)
-
 		end
-		
 		enemy.flip_x=false
 		if enemy.facing==left then
 			enemy.flip_x=true
 		end
-
 		if is_offscreen(enemy) then
 			del(enemies,enemy)
 		end
-
 	end
-
 end
-
 
 function update_grab_guy(enemy)
 	enemy.sprite=100
@@ -429,14 +355,18 @@ function update_grab_guy(enemy)
 	elseif enemy.grabbing==true then
 		enemy.sprite=104
 	else
+		if enemy.x<player.x then
+			enemy.x+=enemy.speed
+			enemy.facing=right
+		elseif enemy.x>player.x then
+			enemy.x-=enemy.speed
+			enemy.facing=left
+		end
 		enemy.sprite+=enemy.w_index*2
 		if collision(enemy.body,player.body) then
 			player.grabbed=5
 			player.jump_dir=0
 			enemy.grabbing=true
-		else
-			enemy.x+=enemy.direction*enemy.speed
-			enemy.facing=enemy.direction
 		end
 	end
 end
@@ -526,7 +456,6 @@ function update_small_guy(enemy)
 	end
 end
 
-
 function update_stick_guy()
 	local target=player.x-8
 	local window=2
@@ -572,18 +501,85 @@ function update_stick_guy()
 		end
 	end
 end
--->8
--- player
 
+-- ===================
+-- on screen display
+-- ===================
+
+function draw_osd()
+
+	function draw_osd_enemy(x,y)
+		function get_boss()
+			for enemy in all(enemies) do
+				if enemy.boss then
+					return enemy
+				end
+			end
+			return nil
+		end
+		local boss=get_boss()
+		local health=0
+		if boss~=nil then
+			health=boss.health
+		end
+		print(" enemy:",x,y+8,9)
+		rectfill(x+28,y+8,x+28+health/3,y+12,9)
+	end
+
+	function draw_osd_level(x,y)
+		for i=1,3 do
+			local c=12
+			if i==current_level then
+				c=9
+			end
+			print("█",(i-1)*12+x,y,c)
+			if i<3 then
+				print("-",(i-1)*12+x+8,y,9)
+			end
+		end	
+	end
+	
+	function draw_osd_player(x,y)
+		print("player:",x,y,8)
+		if player.health>0 then
+			rectfill(x+28,y,x+28+player.health/3,y+4,8)
+		end
+	end
+
+	local x=camera_x+4
+	local y=camera_y+5
+
+	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
+
+	draw_osd_enemy(x,y)
+	draw_osd_player(x,y)
+	draw_osd_level(x+50,y)
+
+	print("life:1",x+55,y+8,7)
+	print("000000",x+91,y,7)
+	print("time:"..flr(level_timer),x+85,y+8,7)
+
+	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
+	
+	if debug then
+		draw_osd_debug()
+	end
+
+end
+
+-- ===================
+-- player
+-- ===================
 
 function init_player()
-	local x=8*level_size-24
+	local x=(level_size-1)*8-176
 	local direction=left
 	if current_level%2==0 then
-		x=0
-		direction=right
+		local x=48
+		local direction=right	
 	end
 	player={
+		score=0,
 		x=x,
 		y=baseline,
 		walking=false,
@@ -652,15 +648,11 @@ function draw_player()
 end
 
 
-function get_player_input()
-end
-
-
 function update_player()
 
 	if ticks%4==0 then
 		player.w_index+=1
-		if player.w_index>3 then
+		if player.w_index>1 then
 			player.w_index=0
 		end
 	end
@@ -806,6 +798,11 @@ function update_player()
 			end
 		end
 
+		if (current_level%2==1 and player.x<=8*6) or
+				(current_level%2==0 and player.y>=level_size*8-8*6) then
+			change_mode(mode_complete)
+		end
+
 	elseif game_mode==mode_death then
 		if player.direction==left then
 			player.x+=gravity/2
@@ -816,9 +813,15 @@ function update_player()
 		if player.y>camera_y+128 then
 			change_mode(mode_start)
 		end
-
+		
+	elseif game_mode==mode_complete then
+		if player.w_index==0 then
+			player.sprite=2
+		else
+			player.sprite=6
+		end
 	end
-	
+
 	update_player_sprite()
 
 end
@@ -876,22 +879,21 @@ function update_player_sprite()
 		player.flip_x=true
 	end
 end
--->8
--- projectiles
 
+-- ===================
+-- projectiles
+-- ===================
 
 function init_projectiles()
 	knife=0
 	projectiles={}
 end
 
-
 function draw_projectiles()
 	for projectile in all(projectiles) do
 		spr(98,projectile.x,projectile.y,1,1,projectile.flip_x)
 	end
 end
-
 
 function new_projectile(kind,x,y,xspeed,yspeed)
 	projectile={
@@ -916,7 +918,6 @@ function new_projectile(kind,x,y,xspeed,yspeed)
 	add(projectiles,projectile)
 end
 
-
 function update_projectiles()
 	for projectile in all(projectiles) do
 		projectile.x+=projectile.xspeed
@@ -940,9 +941,9 @@ function update_projectiles()
 	end	
 end
 
--->8
+-- ===================
 -- scores
-
+-- ===================
 
 function init_scores()
 	scores={}
@@ -973,8 +974,10 @@ function update_scores()
  	end
 	end
 end
--->8
+
+-- ===================
 -- testing
+-- ===================
 
 function debug(message)
 	printh(message,"kungfu")
@@ -990,6 +993,11 @@ function draw_osd_debug()
 	--print('camera_x='..camera_x)
 	--print('camera_y='..camera_y)
 	--print('keyboard='..stat(31))
+	print('camera_x:'..camera_x)
+	print('camera_y:'..camera_y)
+	cursor(camera_x+64,camera_y+106)
+	print('player.x:'..player.x)
+	print('player.y:'..player.y)
 end
 
 function test_input()
@@ -1005,81 +1013,181 @@ function test_input()
 	end
 end
 -->8
--- on screen display
+-- ============
+-- menu program
+-- ============
 
-function draw_osd()
-
-	function draw_osd_enemy(x,y)
-		local boss=get_boss()
-		local health=0
-		if boss~=nil then
-			health=boss.health
-		end
-		print(" enemy:",x,y+8,9)
-		rectfill(x+28,y+8,x+28+health/3,y+12,9)
+function mode_menu_update()
+	if btn(4) and btn(5) then
+		change_mode(mode_intro)
 	end
+end
 
-	function draw_osd_level(x,y)
-		for i=1,3 do
-			local c=12
-			if i==current_level then
-				c=9
-			end
-			print("█",(i-1)*12+x,y,c)
-			if i<3 then
-				print("-",(i-1)*12+x+8,y,9)
-			end
-		end	
+function mode_menu_draw()
+	cls(0)
+	local y=32
+	for i=0,112,16 do
+		spr(96,i,y)
+		spr(96,i,y+20)
+		spr(97,i+8,y)
+		spr(97,i+8,y+20)
 	end
-	
-	function draw_osd_player(x,y)
-		print("player:",x,y,8)
-		if player.health>0 then
-			rectfill(x+28,y,x+28+player.health/3,y+4,8)
-		end
+	spr(70,64-7*8/2,y+10,7,1)
+	center_print("press 🅾️+❎ to start",64,y+40,7)
+	spr(78,5,68,2,2)
+	spr(78,106,68,2,2,true)
+end
+
+-->8
+-- =============
+-- intro program
+-- =============
+
+function mode_intro_init()
+	init_player(true)
+	init_camera()
+	music(5)
+end
+
+function mode_intro_update()
+	intro_timer-=1
+	update_player()
+	--update_camera()
+	if intro_timer<0 then
+		change_mode(mode_start)
 	end
+end
 
-	local x=camera_x+4
-	local y=camera_y+5
-
-	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
-
-	draw_osd_enemy(x,y)
-	draw_osd_player(x,y)
-	draw_osd_level(x+50,y)
-
-	print("life:1",x+55,y+8,7)
-	print("000000",x+91,y,7)
-	print("time:"..flr(level_timer),x+85,y+8,7)
-
-	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
-	
-	if debug then
-		draw_osd_debug()
-	end
-
+function mode_intro_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	camera(camera_x,camera_y)
+	local xc=camera_x+64
+	center_print("level "..current_level,xc,50,7,true)
+	draw_osd()
 end
 -->8
--- camera
+-- =============
+-- start program
+-- =============
 
-function init_camera()
-	if current_level%2==0 then
-		camera_x=0
-	else
-		camera_x=(level_size-1)*8-128
-	end
-	camera_y=baseline-66
+function mode_start_init()
+	init_enemies()
+	init_player()
+	init_projectiles()
+	init_scores()
+	start_timer=56
+	sfx(8)
 end
 
-function update_camera()
-	camera_x=player.x-56
-	camera_y=baseline-66
-	if camera_x<0 then
-		camera_x=0
-	elseif camera_x>level_size*8 then
-		camera_x=level_size*8
+function mode_start_update()
+	update_player()
+	start_timer-=1
+	if start_timer<1 then
+		change_mode(mode_play)
 	end
-	camera(camera_x,camera_y)
+end
+
+function mode_start_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	local xc=camera_x+64
+	center_print("level "..current_level,xc,50,7,true)
+	draw_osd()
+end
+-->8
+-- ===================
+-- play (main) program
+-- ===================
+
+function mode_play_init()
+	music(0)
+end
+
+function mode_play_update()
+	if test_mode then
+		test_input()
+	else
+		if ticks%100==0 then
+			new_enemy(grab_guy,player.x-32)
+		end
+	end
+	update_enemies()
+	update_player()
+	update_projectiles()
+	update_scores()
+	update_camera()
+	level_timer-=0.5
+end
+
+function mode_play_draw()
+	cls(12)
+	draw_level()
+	draw_projectiles()
+	draw_player()	
+	draw_enemies()
+	draw_scores()
+	draw_osd()
+end
+-->8
+-- =============
+-- death program
+-- =============
+
+function mode_death_init()
+	music(-1)	
+end
+
+function mode_death_update()
+	update_player()
+end
+
+function mode_death_draw()
+	cls(12)
+	draw_level()
+	draw_projectiles()
+	draw_player()
+	draw_enemies()
+	draw_scores()
+	draw_osd()
+end
+
+-->8
+-- ======================
+-- complete level program
+-- ======================
+
+function mode_complete_init()
+	music(-1)
+	complete_x=8*6
+	complete_timer=0
+end
+
+function mode_complete_update()
+	if complete_x>=0 then
+		update_camera(complete_x,camera_y)
+	elseif player.y<=camera_y-16 then
+		change_mode(mode_start)	
+	else
+		complete_timer+=1
+		if complete_timer>3 then
+			player.x-=1
+			player.y-=1
+		else
+			player.x-=1
+		end
+		update_player()
+	end
+	complete_x-=1
+end
+
+function mode_complete_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	draw_osd()
 end
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
