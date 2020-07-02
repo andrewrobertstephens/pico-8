@@ -8,6 +8,12 @@ __lua__
 -- version 0.1
 -- ===================
 
+debug=true
+skip_intro=true
+test_mode=false
+onscreen_debug=false
+logfile="kungfu"
+
 palt(0,false)
 palt(12,true)
 
@@ -28,31 +34,33 @@ mode_complete=4
 mode_death=5
 mode_gameover=6
 mode_win=7
-level_size=64
-boss_threshold=128
-logfile="kungfu"
-debug=true
-test_mode=false
+level_size=128
 level_timer=2000
 first_run=true
-min_x=48
-max_x=level_size*8-48-16
+min_x=0
+max_x=level_size*8-1
 
-intro_timer=160
 current_level=1
 
 function _init()
-	if test_mode then
-		poke(0x5f2d,1)
-		change_mode(mode_play)
-	else
-		change_mode(mode_menu)
+	
+	if debug then
+			poke(0x5f2d,1)
 	end
+	
+	init_player()
+	init_enemies()
+	
+	change_mode(mode_menu)
 	printh("kungfu.p8 log",logfile,true)
+
 end
 
 function _update()
 	ticks=ticks+1
+	if debug then
+		test_input()
+	end
 	if game_mode==mode_menu then
 		mode_menu_update()
 	elseif game_mode==mode_intro then
@@ -81,6 +89,9 @@ function _draw()
 		mode_death_draw()
 	elseif game_mode==mode_complete then
 		mode_complete_draw()
+	end
+	if debug and onscreen_debug then
+		draw_osd_debug()
 	end
 end
 
@@ -128,17 +139,21 @@ end
 -- ================
 
 function draw_level()
-	for i=0,(level_size-1)/4 do
+	for i=0,level_size/4 do
 		local x=i*8*4
 		map(0,0,x,24,4,10)
 	end
+	-- draw stairs
 	for i=0,5 do
 		if current_level%2==0 then
-			spr(81,(level_size-1)*8-i*8,33+i*8,1,1,true)
+			spr(81,max_x+48-i*8,33+i*8,1,1,true)
 		else
-			spr(81,i*8,33+i*8,1,1)
+			spr(81,-48+i*8,33+i*8,1,1)
 		end
 	end
+	-- draw boss thresholds
+	spr(74,min_x+boss_threshold,baseline)
+	spr(74,max_x-boss_threshold,baseline)
 end
 
 function is_offscreen(r)
@@ -147,41 +162,6 @@ function is_offscreen(r)
 			(r.direction==left and r.x<cx-r.tile_width*8) or
 			(r.direction==right and r.x>cx+127+r.tile_width*8) or
 			r.y>127
-end
-
--- ===================
--- camera
--- ===================
-
-function init_camera()
-	if test_mode then
-		camera_x=64
-	else
-		if current_level%2==0 then
-			camera_x=0
-		else
-			camera_x=(level_size-1)*8-128
-		end
-	end
-	camera_y=baseline-66
-end
-
-function update_camera(x,y)
-	camera_x=player.x-56	
-	camera_y=baseline-66
-	if camera_x<min_x then
-		camera_x=min_x
-	elseif camera_x>max_x-128 then
-		camera_x=max_x-128
-	end	
-	-- manual override
-	if x~=nil then
-		camera_x=x
-	end
-	if y~=nil then
-		camera_y=y
-	end
-	camera(camera_x,camera_y)
 end
 
 -- ===================
@@ -200,7 +180,7 @@ function draw_osd()
 			return nil
 		end
 		local boss=get_boss()
-		local health=0
+		local health=50
 		if boss~=nil then
 			health=boss.health
 		end
@@ -228,7 +208,7 @@ function draw_osd()
 		end
 	end
 
-	local x=camera_x+4
+	local x=camera_x+5
 	local y=camera_y+5
 
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
@@ -242,10 +222,7 @@ function draw_osd()
 	print("time:"..flr(level_timer),x+85,y+8,7)
 
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
-	
-	if debug then
-		draw_osd_debug()
-	end
+
 
 end
 
@@ -353,44 +330,82 @@ function debug(message)
 end
 
 function draw_osd_debug()
-	cursor(camera_x,camera_y+106)
-	color(7)
-	--print(tostr(player.grabbed),camera_x,camera_y,7)
-	--print(#projectiles,camera_x,camera_y+106,7)
-	--print(player.health,camera_x,camera_y+106,7)
-	--print(#scores,camera_x,camera_y+106,7)
-	--print('camera_x='..camera_x)
-	--print('camera_y='..camera_y)
-	--print('keyboard='..stat(31))
-	--[[
-	--print('camera_x:'..camera_x)
-	--print('min_x:'..min_x)
-	cursor(camera_x+64,camera_y+106)
-	print('player.x:'..player.x)
-	--print('max_x:'..max_x)
-	--print(game_mode)
+
+	function debug_print(label,var)
+		color(7)
+		if var~=nil then
+			local text=label..':'..var
+			print(text)
+		end		
+	end
+	
+	local x=0
+	local y=0
+	if camera_x~=nil then
+		x=camera_x
+	end
+	if camera_y~=nil then
+		y=camera_y
+	end
+
+	cursor(x,y)
+	
+	rectfill(x,y+90,x+127,y+127,0)
+
+	cursor(x,y+91)
+	debug_print('game_mode',game_mode)
+	debug_print('camera_x',camera_x)
+	debug_print('camera_y',camera_y)
+	debug_print('enemies',#enemies)
+	
+	if player~=nil then
+		cursor(x+64,y+91)
+		debug_print('player.x',player.x)
+		debug_print('player.y',player.y)
+		if player.jumping>0 then
+			debug_print('jumping',player.jumping)
+		end
+		if player.punching>0 then
+			debug_print('punching',player.punching)
+		end
+		if player.kicking>0 then
+			debug_print('kicking',player.kicking)
+		end
+	end
+
+	if game_mode==mode_play then
+	end
+	
 end
 
 function test_input()
 	local key=stat(31)
-	if key=="1" then
-		new_enemy(0,player.x-64)
-	elseif key=="2" then
-		new_enemy(1,player.x-64)
-	elseif key=="3" then
-		new_enemy(2,player.x-64)
-	elseif key=="4" then
-		new_enemy(3,player.x-64)
+	if game_mode==mode_play then
+		if key=="1" then
+			add(enemies,enemy_object:new(nil,0))
+		elseif key=="2" then
+			add(enemies,enemy_object:new(nil,1))
+		elseif key=="3" then
+			add(enemies,enemy_object:new(nil,2))
+		elseif key=="4" then
+			add(enemies,enemy_object:new(nil,3))
+		elseif key=="o" then
+			onscreen_debug=not onscreen_debug
+		end
 	end
 end
--->8
+
 -- ============
 -- menu program
 -- ============
 
 function mode_menu_update()
 	if btn(4) and btn(5) then
-		change_mode(mode_intro)
+		if skip_intro then
+			change_mode(mode_start)
+		else
+			change_mode(mode_intro)
+		end
 	end
 end
 
@@ -409,13 +424,13 @@ function mode_menu_draw()
 	spr(78,106,68,2,2,true)
 end
 
--->8
 -- =============
 -- intro program
 -- =============
 
 function mode_intro_init()
-	init_player()
+	--init_player()
+	intro_timer=160
 	update_camera()
 	music(5)
 end
@@ -423,6 +438,7 @@ end
 function mode_intro_update()
 	intro_timer-=1
 	update_player()
+	--update_player()
 	--update_camera()
 	if intro_timer<0 then
 		change_mode(mode_start)
@@ -438,7 +454,7 @@ function mode_intro_draw()
 	center_print("level "..current_level,xc,50,7,true)
 	draw_osd()
 end
--->8
+
 -- =============
 -- start program
 -- =============
@@ -448,10 +464,11 @@ function mode_start_init()
 		current_level+=1
 	end
 	first_run=false
-	init_enemies()
 	init_player()
+	init_enemies()
 	init_projectiles()
 	init_scores()
+	update_camera()
 	start_timer=56
 	sfx(8)
 end
@@ -473,23 +490,19 @@ function mode_start_draw()
 	center_print("level "..current_level,xc,50,7,true)
 	draw_osd()
 end
--->8
+
 -- ===================
 -- play (main) program
 -- ===================
 
 function mode_play_init()
 	music(0)
+	if current_level==1 then
+		new_enemy(stick_guy,min_x)
+	end
 end
 
 function mode_play_update()
-	if test_mode then
-		test_input()
-	else
-		if ticks%100==0 then
-			--new_enemy(grab_guy)
-		end
-	end
 	update_enemies()
 	update_player()
 	update_projectiles()
@@ -502,12 +515,12 @@ function mode_play_draw()
 	cls(12)
 	draw_level()
 	draw_projectiles()
-	draw_player()	
+	draw_player()
 	draw_enemies()
 	draw_scores()
 	draw_osd()
 end
--->8
+
 -- =============
 -- death program
 -- =============
@@ -517,20 +530,19 @@ function mode_death_init()
 end
 
 function mode_death_update()
-	update_player()
+	player:update()
 end
 
 function mode_death_draw()
 	cls(12)
 	draw_level()
 	draw_projectiles()
-	draw_player()
+	player:draw()
 	draw_enemies()
 	draw_scores()
 	draw_osd()
 end
 
--->8
 -- ======================
 -- complete level program
 -- ======================
@@ -545,6 +557,7 @@ function mode_complete_init()
 		complete_direction=right
 	end
 	complete_timer=0
+	player.walking=false
 end
 
 function mode_complete_update()
@@ -574,29 +587,662 @@ function mode_complete_draw()
 	draw_player()
 	draw_osd()
 end
--->8
+
 -- =================
 -- game over program
 -- =================
--->8
+
 -- ================
 -- game win program
 -- ================
+
+-- ===================
+-- camera
+-- ===================
+
+function update_camera(x,y)
+	camera_x=player.x-56	
+	camera_y=baseline-66
+	if camera_x<min_x then
+		camera_x=min_x
+	elseif camera_x>max_x-127 then
+		camera_x=max_x-127
+	end	
+	-- manual override
+	if x~=nil then
+		camera_x=x
+	end
+	if y~=nil then
+		camera_y=y
+	end
+	camera(camera_x,camera_y)
+end
+-->8
+-- ===================
+-- player
+-- ===================
+
+function init_player()
+	player={
+		score=0,
+		x=x,
+		y=baseline,
+		walking=false,
+		w_index=0,
+		direction=right,
+		position=up,
+		kicking=0,
+		punching=0,
+		jumping=0,
+		speed=1,
+		btnup_down=false,
+		btn4_down=false,
+		btn5_down=false,
+		btnleft_down=false,
+		btnright_down=false,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=16
+		},
+		hitbox={
+			x=0,
+			y=0,
+			width=4,
+			height=4
+		},
+		sprite=0,
+		grabbed=0,
+		hold_time=6,
+		health=50,
+		strike_hit=0,
+		width=8,
+		height=16,
+		hurt=0,
+		jump_max=20,
+		jump_dir=0,
+		tile_size=2,
+	}
+	if current_level%2==1 then
+		player.x=max_x-16
+		player.direction=left
+	end
+end
+
+function update_player()
+	if ticks%4==0 then
+		player.w_index+=1
+		if player.w_index>1 then
+			player.w_index=0
+		end
+	end	
+	if game_mode==mode_start then
+		player.walking=true
+		player.x+=player.speed*player.direction
+	elseif game_mode==mode_play then
+		player.last_direction=player.direction
+		if btn(⬅️) and player.jumping==0 then
+			player.direction=left
+		elseif btn(➡️) and player.jumping==0 then
+			player.direction=right
+		end
+		if btn(⬇️) then
+			player.position=down
+		elseif player.punching==0 and player.kicking==0 then
+			player.position=up
+		end
+		if btn(⬆️) then
+			if player.btnup_down==false then
+				if player.y==baseline then
+					player.jumping=player.jump_max
+				end
+				player.jump_dir=0
+				if btn(⬅️) then
+					player.jump_dir=left
+				elseif btn(➡️) then
+					player.jump_dir=right
+				end
+			end
+			player.btnup_down=true
+		else
+			player.btnup_down=false
+		end
+		if btn(4) and player.grabbed<1 then
+			if player.btn4_down==false then
+				player.kicking=10
+				sfx(9)
+			end
+			player.btn4_down=true
+		else
+			player.btn4_down=false
+		end
+		if btn(5) and player.grabbed<1 then
+			if player.btn5_down==false then
+				player.punching=10
+				sfx(9)
+			end
+			player.btn5_down=true
+		else
+			player.btn5_down=false
+		end
+		if btn(⬅️) and 
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and 
+				player.position==up then
+			player.x-=player.speed
+			player.walking=true
+		elseif btn(➡️) and 
+				player.jumping<1 and
+				player.kicking<1 and 
+				player.punching<1 and 
+				player.grabbed<1 and
+				player.position==up then
+			player.x+=player.speed
+			player.walking=true
+		else
+			player.walking=false
+			player.w_index=0
+		end
+
+		if player.last_direction!=player.direction then
+			player.grabbed-=1
+			if player.grabbed<0 then
+				player.grabbed=0
+			end		
+		end		
+		if player.grabbed>1 then
+				player.health-=0.5
+		else
+			for enemy in all(enemies) do
+				if enemy.grabbing==true then
+					enemy.dead=true
+				end
+			end
+		end
+		-- apply gravity/momentum
+		if player.jumping>0 then
+			player.x+=player.jump_dir*player.speed
+		end
+		if player.jumping>player.jump_max/2 then
+			player.y-=gravity
+		else
+			player.y+=gravity
+			if player.y>baseline then
+				player.y=baseline
+			end
+		end
+		player.x2=player.x+16
+		player.y2=player.y+16
+		player.kicking-=1
+		if player.kicking<0 then
+			player.kicking=0
+		end
+		player.punching-=1
+		if player.punching<0 then
+			player.punching=0
+		end
+		player.jumping-=1
+		if player.jumping<0 then
+			player.jumping=0
+		end
+		player.body.x=player.x+4
+		player.body.y=player.y
+		player.body.height=16
+		if player.position==down then
+			player.body.y+=8
+			player.body.height=8
+		end
+		if player.direction==right then
+			player.hitbox.x=player.x+16
+		else
+			player.hitbox.x=player.x-4
+		end
+		player.hitbox.y=player.y
+		if player.strike_hit>0 then
+			player.strike_hit-=1
+		end
+		if player.hurt>0 then
+			player.hurt-=1
+		end		
+		if player.health<=0 then
+			if test_mode==false then
+				change_mode(mode_death)
+			end
+		end
+		if (current_level%2==1 and player.x<=min_x) or
+				(current_level%2==0 and player.x+15>=max_x) then
+			change_mode(mode_complete)
+		end
+	elseif game_mode==mode_death then
+		if player.direction==left then
+			player.x+=gravity/2
+		else
+			player.x-=gravity/2
+		end
+		player.y+=gravity
+		if player.y>camera_y+128 then
+			change_mode(mode_start)
+		end				
+	elseif game_mode==mode_complete then
+		if player.w_index==0 then
+			player.sprite=2
+		else
+			player.sprite=6
+		end
+	end
+	player.sprite=0
+	if game_mode==mode_death then
+		player.sprite=46
+	else
+		if player.jumping>0 then
+			player.sprite=2
+			if player.kicking>player.hold_time then
+				player.sprite=38
+			elseif player.kicking>0 then
+				player.sprite=6
+			elseif player.punching>player.hold_time then
+				player.sprite=40
+			elseif player.punching>0 then
+				player.sprite=6
+			end
+		elseif player.hurt>0 then
+			player.sprite=36
+		elseif player.position==up then
+			if player.kicking>player.hold_time then
+				player.sprite=8
+			elseif player.kicking>0 then
+				player.sprite=6
+			elseif player.punching>player.hold_time then
+				player.sprite=12
+			elseif player.punching>0 then
+				player.sprite=10
+			elseif player.walking==true then
+				if player.w_index==3 then
+					player.sprite=2
+				else
+					player.sprite=player.w_index*2
+				end
+			end
+		else
+			player.sprite=14
+			if player.kicking>player.hold_time then
+				player.sprite=42
+			elseif player.kicking>0 then
+				player.sprite=14
+			elseif player.punching>player.hold_time then
+				player.sprite=34
+			elseif player.punching>0 then
+				player.sprite=32
+			end
+		end
+	end
+	player.flip_x=false
+	if player.direction==left then
+		player.flip_x=true
+	end
+end
+
+function draw_player()
+	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
+end
 -->8
 -- ===================
 -- enemies
 -- ===================
 
 function init_enemies()
-	enemies={}
-	enemy_counter=0
-	enemy_group_counter=0
 	grab_guy=0
 	knife_guy=1
 	small_guy=2
 	stick_guy=3
+	enemy_group_counter=0
+	enemy_counter=0
+	enemy_group_counter=0
+	boss_threshold=120
+	enemies={}
+	if current_level==1 then
+		add(enemies,new_enemy(stick_guy,min_x))
+	end
 end
 
+function more_enemies()
+	if current_level==1 then
+		for i=0,2 do
+			local	r=flr(rnd(2))
+			if r==0 then
+				x=camera_x-64-i*8
+			else
+				x=camera_x+64+127+i*8
+			end
+			if x>min_x+boss_threshold and
+					x<max_x-boss_threshold then
+				if i==2 and enemy_group_counter==4 then
+					add(enemies,new_enemy(knife_guy,x,direction))
+				else
+					add(enemies,new_enemy(grab_guy,x,direction))
+				end
+			end
+		end
+		enemy_group_counter+=1				
+	end
+end
+
+function update_enemies()
+	if player.x>min_x+boss_threshold and
+			player.x<max_x-boss_threshold then
+		if ticks%100==0 then
+			more_enemies()
+		end		
+	end
+	for enemy in all(enemies) do
+		update_enemy(enemy)
+	end
+end
+
+function draw_enemies()
+	for enemy in all(enemies) do
+		draw_enemy(enemy)
+	end
+end
+
+function new_enemy(kind,x)
+	local enemy={
+		kind=kind,
+		x=x,
+		y=baseline,
+		w_index=0,
+		health=1,
+		speed=1.5,
+		grabbing=false,
+		dead=false,
+		size=2,
+		knife=false,
+		facing=direction,
+		idle=0,
+		throwing=0,
+		attack_height=up,
+		cooldown=0,
+		scored=false,
+		body={
+			x=x,
+			y=y,
+			width=8,
+			height=16,
+		},
+		direction=direction,
+		value=100,
+		swinging=0,
+		chain=0,
+		tile_width=2,
+		tile_height=2,
+		boss=false,
+		active=false,
+	}
+	if kind==stick_guy then
+		enemy.health=10
+		enemy.value=1000
+	end
+	if x<player.x then
+		enemy.direction=right
+	else
+		enemy.direction=left
+	end
+	return enemy
+end
+
+function update_enemy(enemy)
+	if ticks%3==0 then
+		enemy.w_index+=1
+		if enemy.w_index>1 then
+			enemy.w_index=0
+		end
+	end
+	enemy.body.x=enemy.x+4
+	enemy.body.y=enemy.y
+	enemy.body.width=8
+	enemy.body.height=16
+	if enemy.boss==false then
+		if (current_level%2==1 and player.x<min_x+boss_threshold) or
+				(current_level%2==0 and player.x>max_x-boss_threshold)	then
+			enemy.running=true
+		end
+	end
+	if enemy.position==down then
+		enemy.body.y+=4
+		enemy.body.height=4
+	end
+	if enemy.dead==true then
+		if enemy.scored==false then
+			new_score(enemy.x,enemy.y-8,enemy.value)
+			enemy.scored=true
+		end
+		if enemy.facing==right then
+			enemy.x-=gravity/2
+			enemy.y+=gravity
+		else
+			enemy.x+=gravity/2
+			enemy.y+=gravity
+		end
+	elseif enemy.running then
+		if enemy.x<player.x then
+			enemy.direction=left
+			enemy.facing=left
+			enemy.x-=enemy.speed
+		else
+			enemy.direction=right
+			enemy.facing=right
+			enemy.x+=enemy.speed
+		end
+	elseif collision(player.hitbox,enemy.body) and 
+			(player.punching==9 or player.kicking==9) then
+		player.strike_hit=3
+		enemy.health-=1
+		sfx(-1)
+		sfx(10)
+	else
+		if enemy.health<=0 then
+			enemy.dead=true
+		end
+		if enemy.kind==grab_guy then
+			update_grab_guy(enemy)
+		elseif enemy.kind==knife_guy then
+			update_knife_guy(enemy)			
+		elseif enemy.kind==small_guy then
+			update_small_guy(enemy)	
+		elseif enemy.kind==stick_guy then
+			update_stick_guy(enemy)
+		end
+		enemy.flip_x=false
+		if enemy.facing==left then
+			enemy.flip_x=true
+		end
+		if is_offscreen(enemy) then
+			enemy=nil
+		end
+	end
+end
+
+function draw_enemies()
+	for enemy in all(enemies) do
+		draw_enemy(enemy)
+	end
+end
+
+function draw_enemy(enemy)
+	spr(
+			enemy.sprite,
+			enemy.x,
+			enemy.y,
+			enemy.tile_width,
+			enemy.tile_height,
+			enemy.flip_x
+	)
+	if enemy.kind==stick_guy then
+		if enemy.swinging>0 and enemy.swinging<5 then
+			if enemy.attack_height==high then
+				line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
+			else
+				line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
+			end
+		end
+	end
+end
+
+function update_grab_guy(enemy)
+	enemy.sprite=100
+	if enemy.dead==true then
+		enemy.sprite=106
+	elseif enemy.grabbing==true then
+		enemy.sprite=104
+	else
+		enemy.facing=enemy.direction
+		if enemy.x<player.x then
+			enemy.x+=enemy.speed
+		elseif enemy.x>player.x then
+			enemy.x-=enemy.speed
+		end
+		enemy.sprite+=enemy.w_index*2
+		if collision(enemy.body,player.body) then
+			player.grabbed=5
+			player.jump_dir=0
+			enemy.grabbing=true
+		end
+	end
+end
+
+function update_knife_guy(enemy)
+
+	local target=0
+	local window=8	
+
+	enemy.sprite=128
+	enemy.facing=enemy.direction
+
+	if enemy.direction==right then
+		target=player.x-32
+	elseif enemy.direction==left then
+		target=player.x+32
+	end
+	
+	if enemy.dead==true then
+		enemy.sprite=140
+
+	elseif enemy.throwing>0 then
+		if enemy.throwing>=5 then
+			enemy.sprite=132
+		else
+			enemy.sprite=134
+		end
+		if enemy.attack_height==down then
+			enemy.sprite+=4
+		end
+		if enemy.throwing==5 then
+			local y=enemy.y-2
+			if enemy.attack_height==down then
+				y+=10
+			end
+			new_projectile(knife,enemy.x,y,2*enemy.direction,0)
+		end
+		if enemy.throwing==1 then
+			enemy.attack_height*=-1
+		end
+		enemy.throwing-=1
+		
+	elseif enemy.cooldown>0 then
+		enemy.cooldown-=1
+	
+	else
+		if enemy.x<target-8 then
+			enemy.sprite+=enemy.w_index*2
+			enemy.x+=enemy.speed
+			enemy.facing=right
+		elseif enemy.x>target+8 then
+			enemy.sprite+=enemy.w_index*2
+			enemy.x-=enemy.speed
+			enemy.facing=left
+		else
+			enemy.throwing=10
+			enemy.cooldown=50
+		end
+	
+	end
+	
+end
+
+function update_small_guy(enemy)
+	enemy.body.x+=2
+	enemy.body.width=2
+	enemy.body.height=8
+	enemy.sprite=108
+	if enemy.dead==true then
+		enemy.sprite=108
+	elseif enemy.grabbing==true then
+		enemy.sprite=109
+	else
+		enemy.sprite+=enemy.w_index
+		if collision(enemy.body,player.body) then
+			player.grabbed=10
+			enemy.grabbing=true
+		else
+			if enemy.direction==right then
+				enemy.x+=enemy.speed
+			else
+				enemy.x-=enemy.speed
+			end				
+		end
+	end
+end
+
+function update_stick_guy(enemy)
+	local target=player.x-8
+	local window=2
+	enemy.sprite=160
+	if enemy.active then
+		if enemy.dead then
+			enemy.sprite=172
+		elseif enemy.swinging>0 then
+			if enemy.swinging>=5 then
+				enemy.sprite=164
+			else
+				enemy.sprite=166
+			end
+			if enemy.attack_height==low then
+				enemy.sprite+=4
+			end
+			enemy.swinging-=1
+		elseif enemy.cooldown>0 then
+			enemy.cooldown-=1
+			enemy.x-=enemy.speed
+			enemy.sprite+=enemy.w_index*2
+		else
+			if enemy.x<target-window then
+				enemy.sprite+=enemy.w_index*2
+				enemy.x+=enemy.speed
+			elseif enemy.x>target+window then
+				enemy.sprite+=enemy.w_index*2
+				enemy.x-=enemy.speed
+			else
+				if enemy.chain>2 then
+					enemy.chain=0
+					enemy.cooldown=15
+				else
+					enemy.attack_height=flr(rnd(2))
+					enemy.chain+=1
+					enemy.swinging=10
+				end
+			end
+		end
+	else
+		if player.x<min_x+boss_threshold then
+			enemy.active=true
+		end
+	end
+end
+
+--[[
 function draw_enemies()
 	for enemy in all(enemies) do
 		spr(
@@ -622,9 +1268,9 @@ end
 function new_enemy(kind,x,direction)
 
 	if direction==nil then
-		if player.x<boss_threshold then
+		if camera_x<min_x+boss_threshold*8 then
 			direction=right
-		elseif player.x>level_size*8-boss_threshold then
+		elseif camera_x+127>level_size*8-boss_threshold*8 then
 			direction=left
 		else
 			local d=flr(rnd(2))
@@ -746,474 +1392,7 @@ function update_enemies()
 		end
 	end
 end
-
-function update_grab_guy(enemy)
-	enemy.sprite=100
-	if enemy.dead==true then
-		enemy.sprite=106
-	elseif enemy.grabbing==true then
-		enemy.sprite=104
-	else
-		if enemy.x<player.x then
-			enemy.x+=enemy.speed
-			enemy.facing=right
-		elseif enemy.x>player.x then
-			enemy.x-=enemy.speed
-			enemy.facing=left
-		end
-		enemy.sprite+=enemy.w_index*2
-		if collision(enemy.body,player.body) then
-			player.grabbed=5
-			player.jump_dir=0
-			enemy.grabbing=true
-		end
-	end
-end
-
-
-function update_knife_guy(enemy)
-
-	local target=0
-	local window=8	
-
-	enemy.sprite=128
-	enemy.facing=enemy.direction
-
-	if enemy.direction==right then
-		target=player.x-32
-	elseif enemy.direction==left then
-		target=player.x+32
-	end
-	
-	if enemy.dead==true then
-		enemy.sprite=140
-
-	elseif enemy.throwing>0 then
-		if enemy.throwing>=5 then
-			enemy.sprite=132
-		else
-			enemy.sprite=134
-		end
-		if enemy.attack_height==down then
-			enemy.sprite+=4
-		end
-		if enemy.throwing==5 then
-			local y=enemy.y-2
-			if enemy.attack_height==down then
-				y+=10
-			end
-			new_projectile(knife,enemy.x,y,2*enemy.direction,0)
-		end
-		if enemy.throwing==1 then
-			enemy.attack_height*=-1
-		end
-		enemy.throwing-=1
-		
-	elseif enemy.cooldown>0 then
-		enemy.cooldown-=1
-	
-	else
-		if enemy.x<target-8 then
-			enemy.sprite+=enemy.w_index*2
-			enemy.x+=enemy.speed
-			enemy.facing=right
-		elseif enemy.x>target+8 then
-			enemy.sprite+=enemy.w_index*2
-			enemy.x-=enemy.speed
-			enemy.facing=left
-		else
-			enemy.throwing=10
-			enemy.cooldown=50
-		end
-	
-	end
-	
-end
-
-
-function update_small_guy(enemy)
-	enemy.body.x+=2
-	enemy.body.width=2
-	enemy.body.height=8
-	enemy.sprite=108
-	if enemy.dead==true then
-		enemy.sprite=108
-	elseif enemy.grabbing==true then
-		enemy.sprite=109
-	else
-		enemy.sprite+=enemy.w_index
-		if collision(enemy.body,player.body) then
-			player.grabbed=10
-			enemy.grabbing=true
-		else
-			if enemy.direction==right then
-				enemy.x+=enemy.speed
-			else
-				enemy.x-=enemy.speed
-			end				
-		end
-	end
-end
-
-function update_stick_guy()
-	local target=player.x-8
-	local window=2
-	enemy.sprite=160
-	if enemy.active then
-		if enemy.dead then
-			enemy.sprite=172
-		elseif enemy.swinging>0 then
-			if enemy.swinging>=5 then
-				enemy.sprite=164
-			else
-				enemy.sprite=166
-			end
-			if enemy.attack_height==low then
-				enemy.sprite+=4
-			end
-			enemy.swinging-=1
-		elseif enemy.cooldown>0 then
-			enemy.cooldown-=1
-			enemy.x-=enemy.speed
-			enemy.sprite+=enemy.w_index*2
-		else
-			if enemy.x<target-window then
-				enemy.sprite+=enemy.w_index*2
-				enemy.x+=enemy.speed
-			elseif enemy.x>target+window then
-				enemy.sprite+=enemy.w_index*2
-				enemy.x-=enemy.speed
-			else
-				if enemy.chain>2 then
-					enemy.chain=0
-					enemy.cooldown=15
-				else
-					enemy.attack_height=flr(rnd(2))
-					enemy.chain+=1
-					enemy.swinging=10
-				end
-			end
-		end
-	else
-		if enemy.x>player.x-boss_threshold then
-			enemy.active=true
-		end
-	end
-end
--->8
--- ===================
--- player
--- ===================
-
-function init_player()
-	local x=min_x
-	local direction=right
-	if current_level%2==1 then
-		x=max_x-28
-		direction=left
-	end
-	player={
-		score=0,
-		x=x,
-		y=baseline,
-		walking=false,
-		w_index=0,
-		direction=direction,
-		position=up,
-		kicking=0,
-		punching=0,
-		jumping=0,
-		speed=1,
-		btnup_down=false,
-		btn4_down=false,
-		btn5_down=false,
-		btnleft_down=false,
-		btnright_down=false,
-		body={
-			x=0,
-			y=0,
-			width=8,
-			height=16
-		},
-		hitbox={
-			x=0,
-			y=0,
-			width=4,
-			height=4
-		},
-		sprite=0,
-		grabbed=0,
-		hold_time=6,
-		health=50,
-		strike_hit=0,
-		width=8,
-		height=16,
-		hurt=0,
-		jump_max=20,
-		jump_dir=0,
-		tile_size=2
-	}
-	debug(player.x)
-end
-
-
-function draw_player()
-	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
-	--[[
-	rectfill(
-		player.body.x,
-		player.body.y,
-		player.body.x+player.body.width-1,
-		player.body.y+player.body.height-1,
-		15		
-	)]]
-	
-	--[[
-	rectfill(
-			player.hitbox.x,
-			player.hitbox.y,
-			player.hitbox.x+player.hitbox.width-1,
-			player.hitbox.y+player.hitbox.height-1,
-			0
-	)
-	]]
-	if player.strike_hit>0 then
-		spr(68,player.hitbox.x-2,player.hitbox.y)
-	end
-end
-
-
-function update_player()
-
-	if ticks%4==0 then
-		player.w_index+=1
-		if player.w_index>1 then
-			player.w_index=0
-		end
-	end
-	
-	if game_mode==mode_start then
-		player.walking=true
-		player.x+=player.speed*player.direction
-		
-	elseif game_mode==mode_play then
-		player.last_direction=player.direction
-		if btn(⬅️) and player.jumping==0 then
-			player.direction=left
-		elseif btn(➡️) and player.jumping==0 then
-			player.direction=right
-		end
-		if btn(⬇️) then
-			player.position=down
-		elseif player.punching==0 and player.kicking==0 then
-			player.position=up
-		end
-		if btn(⬆️) then
-			if player.btnup_down==false then
-				if player.y==baseline then
-					player.jumping=player.jump_max
-				end
-				player.jump_dir=0
-				if btn(⬅️) then
-					player.jump_dir=left
-				elseif btn(➡️) then
-					player.jump_dir=right
-				end
-			end
-			player.btnup_down=true
-		else
-			player.btnup_down=false
-		end
-		if btn(4) and player.grabbed<1 then
-			if player.btn4_down==false then
-				player.kicking=10
-				sfx(9)
-			end
-			player.btn4_down=true
-		else
-			player.btn4_down=false
-		end
-		if btn(5) and player.grabbed<1 then
-			if player.btn5_down==false then
-				player.punching=10
-				sfx(9)
-			end
-			player.btn5_down=true
-		else
-			player.btn5_down=false
-		end
-		if btn(⬅️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and 
-				player.position==up then
-			player.x-=player.speed
-			player.walking=true
-		elseif btn(➡️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and
-				player.position==up then
-			player.x+=player.speed
-			player.walking=true
-		else
-			player.walking=false
-			player.w_index=0
-		end
-
-		if player.last_direction!=player.direction then
-			player.grabbed-=1
-			if player.grabbed<0 then
-				player.grabbed=0
-			end		
-		end		
-		if player.grabbed>1 then
-				player.health-=0.5
-		else
-			for enemy in all(enemies) do
-				if enemy.grabbing==true then
-					enemy.dead=true
-				end
-			end
-		end
-		-- apply gravity/momentum
-		if player.jumping>0 then
-			player.x+=player.jump_dir*player.speed
-		end
-		if player.jumping>player.jump_max/2 then
-			player.y-=gravity
-		else
-			player.y+=gravity
-			if player.y>baseline then
-				player.y=baseline
-			end
-		end
-		player.x2=player.x+16
-		player.y2=player.y+16
-		player.kicking-=1
-		if player.kicking<0 then
-			player.kicking=0
-		end
-		player.punching-=1
-		if player.punching<0 then
-			player.punching=0
-		end
-		player.jumping-=1
-		if player.jumping<0 then
-			player.jumping=0
-		end
-
-		player.body.x=player.x+4
-		player.body.y=player.y
-		player.body.height=16
-		if player.position==down then
-			player.body.y+=8
-			player.body.height=8
-		end
-
-		if player.direction==right then
-			player.hitbox.x=player.x+16
-		else
-			player.hitbox.x=player.x-4
-		end
-		player.hitbox.y=player.y
-		
-		if player.strike_hit>0 then
-			player.strike_hit-=1
-		end
-
-		if player.hurt>0 then
-			player.hurt-=1
-		end		
-		if player.health<=0 then
-			if test_mode==false then
-				change_mode(mode_death)
-			end
-		end
-
-		if (current_level%2==1 and player.x<=min_x) or
-				(current_level%2==0 and player.x>=max_x) then
-			change_mode(mode_complete)
-		end
-
-	elseif game_mode==mode_death then
-		if player.direction==left then
-			player.x+=gravity/2
-		else
-			player.x-=gravity/2
-		end
-		player.y+=gravity
-		if player.y>camera_y+128 then
-			change_mode(mode_start)
-		end
-		
-	elseif game_mode==mode_complete then
-		if player.w_index==0 then
-			player.sprite=2
-		else
-			player.sprite=6
-		end
-	end
-
-	update_player_sprite()
-
-end
-
-
-function update_player_sprite()
-	player.sprite=0
-	if game_mode==mode_death then
-		player.sprite=46
-	else
-		if player.jumping>0 then
-			player.sprite=2
-			if player.kicking>player.hold_time then
-				player.sprite=38
-			elseif player.kicking>0 then
-				player.sprite=6
-			elseif player.punching>player.hold_time then
-				player.sprite=40
-			elseif player.punching>0 then
-				player.sprite=6
-			end
-		elseif player.hurt>0 then
-			player.sprite=36
-		elseif player.position==up then
-			if player.kicking>player.hold_time then
-				player.sprite=8
-			elseif player.kicking>0 then
-				player.sprite=6
-			elseif player.punching>player.hold_time then
-				player.sprite=12
-			elseif player.punching>0 then
-				player.sprite=10
-			elseif player.walking==true then
-				if player.w_index==3 then
-					player.sprite=2
-				else
-					player.sprite=player.w_index*2
-				end
-			end
-		else
-			player.sprite=14
-			if player.kicking>player.hold_time then
-				player.sprite=42
-			elseif player.kicking>0 then
-				player.sprite=14
-			elseif player.punching>player.hold_time then
-				player.sprite=34
-			elseif player.punching>0 then
-				player.sprite=32
-			end
-		end
-	end
-	player.flip_x=false
-	if player.direction==left then
-		player.flip_x=true
-	end
-end
+]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
