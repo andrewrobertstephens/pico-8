@@ -10,7 +10,7 @@ __lua__
 
 debug=true
 skip_intro=true
-test_mode=false
+test_mode=true
 onscreen_debug=false
 logfile="kungfu"
 
@@ -35,7 +35,6 @@ mode_death=5
 mode_gameover=6
 mode_win=7
 level_size=128
-level_timer=2000
 first_run=true
 min_x=0
 max_x=level_size*8-1
@@ -70,6 +69,8 @@ function _update()
 		mode_death_update()
 	elseif game_mode==mode_complete then
 		mode_complete_update()
+	elseif game_mode==mode_tally then
+		mode_tally_update()
 	end
 	last_time=current_time
 end
@@ -105,6 +106,8 @@ function change_mode(mode)
 		mode_death_init()
 	elseif game_mode==mode_complete then
 		mode_complete_init()
+	elseif game_mode==mode_tally then
+		mode_tally_init()
 	end
 end
 
@@ -137,7 +140,8 @@ end
 -- ================
 
 function draw_level()
-	for i=0,level_size/4 do
+	-- draw level
+	for i=-6,level_size/4+6 do
 		local x=i*8*4
 		map(0,0,x,24,4,10)
 	end
@@ -200,10 +204,17 @@ function draw_osd()
 	end
 	
 	function draw_osd_player(x,y)
-		print("player:",x,y,8)
+		print("p:",x,y,8)
+		health_bar(x,y)
 		if player.health>0 then
-			rectfill(x+28,y,x+28+player.health/3,y+4,8)
+			--rectfill(x+28,y,x+28+player.health/3,y+4,8)
 		end
+	end	
+
+	function health_bar(x,y,decimal,c)
+		rectfill(x,y,x+15,y+4,12)
+		local amount=decimal*15
+		rectfill(x,y,x+amount,y+4,c)
 	end
 
 	local x=camera_x+5
@@ -211,8 +222,15 @@ function draw_osd()
 
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
 
-	draw_osd_enemy(x,y)
-	draw_osd_player(x,y)
+	print('player',x,y,9)
+	health_bar(x+25,y,player.health/100,9)
+	
+	print(' enemy',x,y+8,8)
+	health_bar(x+25,y+8,1,8)
+	
+
+	--draw_osd_enemy(x,y)
+	--draw_osd_player(x,y)
 	draw_osd_level(x+50,y)
 
 	print("life:1",x+55,y+8,7)
@@ -316,7 +334,13 @@ end
 
 function draw_effects()
 	for effect in all(effects) do
-		print("✽",effect.x,effect.y,8)
+		local c
+		if effect.kind==enemy_hit_effect then
+			c=7
+		else
+			c=8
+		end
+		print("✽",effect.x,effect.y,c)		
 	end
 end
 
@@ -494,10 +518,7 @@ end
 -- =============
 
 function mode_start_init()
-	if first_run==false then
-		current_level+=1
-	end
-	first_run=false
+	level_timer=2000
 	init_player()
 	init_enemies()
 	init_projectiles()
@@ -577,6 +598,7 @@ function mode_death_draw()
 	draw_player()
 	draw_enemies()
 	draw_scores()
+	draw_effects()
 	draw_osd()
 end
 
@@ -608,7 +630,7 @@ function mode_complete_update()
 	end
 
 	if complete_timer>100 then
-		change_mode(mode_start)
+		change_mode(mode_tally)
 	end
 	
 	update_player()
@@ -623,6 +645,21 @@ function mode_complete_draw()
 	draw_level()
 	draw_player()
 	draw_osd()
+end
+
+-- --------------
+-- tally program
+-- --------------
+
+function mode_tally_init()
+	current_level+=1
+	change_mode(mode_start)
+end
+
+function mode_tally_update()
+end
+
+function mode_tally_draw()
 end
 
 -- =================
@@ -660,9 +697,10 @@ end
 -- ===================
 
 function init_player()
+	debug('init_player')
 	player={
 		score=0,
-		x=x,
+		x=0,
 		y=baseline,
 		walking=false,
 		w_index=0,
@@ -692,7 +730,7 @@ function init_player()
 		sprite=0,
 		grabbed=0,
 		hold_time=6,
-		health=50,
+		health=100,
 		strike_hit=0,
 		width=8,
 		height=16,
@@ -1064,11 +1102,13 @@ end
 
 -- update all enemy movements
 function update_enemies()
-	if player.x>min_x+boss_threshold and
-			player.x<max_x-boss_threshold then
-		if ticks%100==0 then
-			more_enemies()
-		end		
+	if test_mode==false then
+		if player.x>min_x+boss_threshold and
+				player.x<max_x-boss_threshold then
+			if ticks%100==0 then
+				more_enemies()
+			end		
+		end
 	end
 	for enemy in all(enemies) do
 		update_enemy(enemy)
@@ -1342,6 +1382,21 @@ function draw_enemy(enemy)
 		end
 	end
 end
+-->8
+--[[
+
+todo:
+		- tally mode
+		- snakes
+		- dragons
+		- mr. x
+		
+maybe:
+		- boss for level 2?
+		- parallax background?
+		- bees?
+
+]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
