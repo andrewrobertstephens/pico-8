@@ -58,9 +58,6 @@ end
 
 function _update()
 	ticks=ticks+1
-	if debug then
-		test_input()
-	end
 	if game_mode==mode_menu then
 		mode_menu_update()
 	elseif game_mode==mode_intro then
@@ -74,6 +71,7 @@ function _update()
 	elseif game_mode==mode_complete then
 		mode_complete_update()
 	end
+	last_time=current_time
 end
 
 function _draw()	
@@ -287,6 +285,41 @@ function update_projectiles()
 	end	
 end
 
+-- -------
+-- effects
+-- -------
+
+function init_effects()
+	effects={}
+	enemy_hit_effect=0
+	player_hit_effect=0
+end
+
+function new_effect(kind,x,y)
+	local effect={
+		kind=kind,
+		x=x,
+		y=y,
+		countdown=3,
+	}
+	add(effects,effect)
+end
+
+function update_effects()
+	for effect in all(effects) do
+		effect.countdown-=1
+		if effect.countdown<1 then
+			del(effects,effect)
+		end
+	end
+end
+
+function draw_effects()
+	for effect in all(effects) do
+		print("✽",effect.x,effect.y,8)
+	end
+end
+
 -- ===================
 -- scores
 -- ===================
@@ -328,6 +361,7 @@ end
 function debug(message)
 	printh(message,"kungfu")
 end
+
 
 function draw_osd_debug()
 
@@ -500,9 +534,11 @@ function mode_play_init()
 	if current_level==1 then
 		new_enemy(stick_guy,min_x)
 	end
+	init_effects()
 end
 
 function mode_play_update()
+	update_effects()
 	update_enemies()
 	update_player()
 	update_projectiles()
@@ -517,6 +553,7 @@ function mode_play_draw()
 	draw_projectiles()
 	draw_player()
 	draw_enemies()
+	draw_effects()
 	draw_scores()
 	draw_osd()
 end
@@ -530,14 +567,14 @@ function mode_death_init()
 end
 
 function mode_death_update()
-	player:update()
+	update_player()
 end
 
 function mode_death_draw()
 	cls(12)
 	draw_level()
 	draw_projectiles()
-	player:draw()
+	draw_player()
 	draw_enemies()
 	draw_scores()
 	draw_osd()
@@ -660,7 +697,7 @@ function init_player()
 		width=8,
 		height=16,
 		hurt=0,
-		jump_max=20,
+		jump_max=15,
 		jump_dir=0,
 		tile_size=2,
 	}
@@ -692,7 +729,7 @@ function update_player()
 		elseif player.punching==0 and player.kicking==0 then
 			player.position=up
 		end
-		if btn(⬆️) then
+		if btn(⬆️) and player.grabbed==0 then
 			if player.btnup_down==false then
 				if player.y==baseline then
 					player.jumping=player.jump_max
@@ -758,7 +795,7 @@ function update_player()
 		else
 			for enemy in all(enemies) do
 				if enemy.grabbing==true then
-					enemy.dead=true
+					enemy.shook=true
 				end
 			end
 		end
@@ -795,12 +832,30 @@ function update_player()
 			player.body.y+=8
 			player.body.height=8
 		end
+		-- update the hitbox
+		player.hitbox.width=4
+		player.hitbox.height=4
 		if player.direction==right then
-			player.hitbox.x=player.x+16
+			player.hitbox.x=player.x+15
 		else
 			player.hitbox.x=player.x-4
 		end
 		player.hitbox.y=player.y
+		if player.jumping>0 then
+			if player.kicking>0 then
+				player.hitbox.y+=8
+				player.hitbox.height=8
+			end		
+		elseif player.position==down then
+			player.hitbox.y+=8		
+		end
+		if player.punching>0 then
+			if player.direction==right then
+				player.hitbox.x-=1
+			else
+				player.hitbox.x+=1
+			end
+		end
 		if player.strike_hit>0 then
 			player.strike_hit-=1
 		end
@@ -886,6 +941,15 @@ function update_player()
 end
 
 function draw_player()
+	--[[
+	rectfill(
+		player.hitbox.x,
+		player.hitbox.y,
+		player.hitbox.x+player.hitbox.width,
+		player.hitbox.y+player.hitbox.height,
+		10
+	)
+	]]
 	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
 end
 -->8
@@ -908,46 +972,42 @@ function init_enemies()
 	end
 end
 
+-- get an x for a new enemy
+function random_enemy_x(offset)
+	local left_x=camera_x-16-offset
+	local right_x=camera_x+127+16+offset
+	if player.x<min_x+boss_threshold then
+		x=right_x
+	elseif player.x>max_x-boss_threshold then
+		x=left_x
+	else
+		local	r=flr(rnd(2))
+		if r==0 then
+			x=right_x
+		else
+			x=left_x
+		end
+	end
+	return x
+end
+
+-- add a group of enemies
 function more_enemies()
 	if current_level==1 then
 		for i=0,2 do
-			local	r=flr(rnd(2))
-			if r==0 then
-				x=camera_x-64-i*8
+			local x=random_enemy_x(i*8)
+			if i==2 and enemy_group_counter>2 then
+				add(enemies,new_enemy(knife_guy,x))
+				enemy_group_counter=0
 			else
-				x=camera_x+64+127+i*8
-			end
-			if x>min_x+boss_threshold and
-					x<max_x-boss_threshold then
-				if i==2 and enemy_group_counter==4 then
-					add(enemies,new_enemy(knife_guy,x,direction))
-				else
-					add(enemies,new_enemy(grab_guy,x,direction))
-				end
+				add(enemies,new_enemy(grab_guy,x))
+				enemy_group_counter+=1				
 			end
 		end
-		enemy_group_counter+=1				
 	end
 end
 
-function update_enemies()
-	if player.x>min_x+boss_threshold and
-			player.x<max_x-boss_threshold then
-		if ticks%100==0 then
-			more_enemies()
-		end		
-	end
-	for enemy in all(enemies) do
-		update_enemy(enemy)
-	end
-end
-
-function draw_enemies()
-	for enemy in all(enemies) do
-		draw_enemy(enemy)
-	end
-end
-
+-- return a new enemy
 function new_enemy(kind,x)
 	local enemy={
 		kind=kind,
@@ -966,6 +1026,7 @@ function new_enemy(kind,x)
 		attack_height=up,
 		cooldown=0,
 		scored=false,
+		shook=false,
 		body={
 			x=x,
 			y=y,
@@ -981,7 +1042,11 @@ function new_enemy(kind,x)
 		boss=false,
 		active=false,
 	}
-	if kind==stick_guy then
+	if kind==knife_guy then
+		enemy.health=2
+		enemy.value=200
+	elseif kind==stick_guy then
+		enemy.boss=true
 		enemy.health=10
 		enemy.value=1000
 	end
@@ -993,6 +1058,27 @@ function new_enemy(kind,x)
 	return enemy
 end
 
+-- -------
+-- updates
+-- -------
+
+-- update all enemy movements
+function update_enemies()
+	if player.x>min_x+boss_threshold and
+			player.x<max_x-boss_threshold then
+		if ticks%100==0 then
+			more_enemies()
+		end		
+	end
+	for enemy in all(enemies) do
+		update_enemy(enemy)
+		if enemy.y>camera_y+127 then
+			del(enemies,enemy)
+		end
+	end
+end
+
+-- update one enemy's movement
 function update_enemy(enemy)
 	if ticks%3==0 then
 		enemy.w_index+=1
@@ -1014,9 +1100,10 @@ function update_enemy(enemy)
 		enemy.body.y+=4
 		enemy.body.height=4
 	end
-	if enemy.dead==true then
-		if enemy.scored==false then
-			new_score(enemy.x,enemy.y-8,enemy.value)
+	if enemy.dead or enemy.shook then
+		if enemy.scored==false and
+				enemy.shook==false then
+			new_score(enemy.x,enemy.y-8,enemy.value*enemy.multiplier)
 			enemy.scored=true
 		end
 		if enemy.facing==right then
@@ -1038,8 +1125,14 @@ function update_enemy(enemy)
 		end
 	elseif collision(player.hitbox,enemy.body) and 
 			(player.punching==9 or player.kicking==9) then
+		new_effect(enemy_hit_effect,player.hitbox.x,player.hitbox.y)	
 		player.strike_hit=3
 		enemy.health-=1
+		enemy.multiplier=1
+		if enemy.boss==false and
+				player.punching==9 then
+			enemy.multiplier=2
+		end
 		sfx(-1)
 		sfx(10)
 	else
@@ -1059,43 +1152,15 @@ function update_enemy(enemy)
 		if enemy.facing==left then
 			enemy.flip_x=true
 		end
-		if is_offscreen(enemy) then
-			enemy=nil
-		end
 	end
 end
 
-function draw_enemies()
-	for enemy in all(enemies) do
-		draw_enemy(enemy)
-	end
-end
-
-function draw_enemy(enemy)
-	spr(
-			enemy.sprite,
-			enemy.x,
-			enemy.y,
-			enemy.tile_width,
-			enemy.tile_height,
-			enemy.flip_x
-	)
-	if enemy.kind==stick_guy then
-		if enemy.swinging>0 and enemy.swinging<5 then
-			if enemy.attack_height==high then
-				line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
-			else
-				line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
-			end
-		end
-	end
-end
-
+-- updates for grab_guy
 function update_grab_guy(enemy)
 	enemy.sprite=100
-	if enemy.dead==true then
+	if enemy.dead or enemy.shook then
 		enemy.sprite=106
-	elseif enemy.grabbing==true then
+	elseif enemy.grabbing then
 		enemy.sprite=104
 	else
 		enemy.facing=enemy.direction
@@ -1113,6 +1178,7 @@ function update_grab_guy(enemy)
 	end
 end
 
+-- updates for knife_guy
 function update_knife_guy(enemy)
 
 	local target=0
@@ -1172,6 +1238,7 @@ function update_knife_guy(enemy)
 	
 end
 
+-- updates for small guy
 function update_small_guy(enemy)
 	enemy.body.x+=2
 	enemy.body.width=2
@@ -1196,9 +1263,11 @@ function update_small_guy(enemy)
 	end
 end
 
+-- updates for stick_guy
 function update_stick_guy(enemy)
 	local target=player.x-8
 	local window=2
+	enemy.facing=enemy.direction
 	enemy.sprite=160
 	if enemy.active then
 		if enemy.dead then
@@ -1242,157 +1311,37 @@ function update_stick_guy(enemy)
 	end
 end
 
---[[
+-- -------
+-- drawing
+-- -------
+
+-- draw all enemies to screen
 function draw_enemies()
 	for enemy in all(enemies) do
-		spr(
-				enemy.sprite,
-				enemy.x,
-				enemy.y,
-				enemy.tile_width,
-				enemy.tile_height,
-				enemy.flip_x
-		)
-		if enemy.kind==stick_guy then
-			if enemy.swinging>0 and enemy.swinging<5 then
-				if enemy.attack_height==high then
-					line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
-				else
-					line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
-				end
-			end
-		end
+		draw_enemy(enemy)
 	end
 end
 
-function new_enemy(kind,x,direction)
-
-	if direction==nil then
-		if camera_x<min_x+boss_threshold*8 then
-			direction=right
-		elseif camera_x+127>level_size*8-boss_threshold*8 then
-			direction=left
-		else
-			local d=flr(rnd(2))
-			if d==0 then
-				direction=left
+-- draw one enemy to screen
+function draw_enemy(enemy)
+	spr(
+			enemy.sprite,
+			enemy.x,
+			enemy.y,
+			enemy.tile_width,
+			enemy.tile_height,
+			enemy.flip_x
+	)
+	if enemy.kind==stick_guy then
+		if enemy.swinging>0 and enemy.swinging<5 and enemy.dead==false then
+			if enemy.attack_height==high then
+				line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
 			else
-				direction=right
+				line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
 			end
-		end
-	end
-
-	if x==nil then
-		if direction==right then
-			x=camera_x-128
-		else
-			x=camera_x+256
-		end
-	end
-
-	enemy={
-		kind=kind,
-		x=x,
-		y=baseline,
-		w_index=0,
-		health=1,
-		speed=1.5,
-		grabbing=false,
-		dead=false,
-		size=2,
-		knife=false,
-		facing=direction,
-		idle=0,
-		throwing=0,
-		attack_height=up,
-		cooldown=0,
-		scored=false,
-		body={
-			x=x,
-			y=y,
-			width=8,
-			height=16,
-		},
-		direction=direction,
-		value=100,
-		swinging=0,
-		chain=0,
-		tile_width=2,
-		tile_height=2,
-		boss=false,
-		active=true,
-	}
-	if enemy.kind==knife_guy then
-		enemy.health=2
-		enemy.value=200
-	elseif enemy.kind==small_guy then
-		enemy.tile_width=1
-	elseif enemy.kind==stick_guy then
-		enemy.boss=true
-		enemy.active=false
-		enemy.health=50
-	end
-	add(enemies,enemy)
-end
-
-function update_enemies()
-	for enemy in all(enemies) do
-		if ticks%3==0 then
-			enemy.w_index+=1
-			if enemy.w_index>1 then
-				enemy.w_index=0
-			end
-		end
-		enemy.body.x=enemy.x+4
-		enemy.body.y=enemy.y
-		enemy.body.width=8
-		enemy.body.height=16
-		if enemy.position==down then
-			enemy.body.y+=4
-			enemy.body.height=4
-		end
-		if collision(player.hitbox,enemy.body) and 
-				(player.punching==9 or player.kicking==9) then
-			player.strike_hit=3
-			enemy.health-=1
-			sfx(-1)
-			sfx(10)
-		end
-		if enemy.health<=0 then
-			enemy.dead=true
-		end
-		if enemy.dead==true then
-			if enemy.scored==false then
-				new_score(enemy.x,enemy.y-8,enemy.value)
-				enemy.scored=true
-			end
-			if enemy.facing==right then
-				enemy.x-=gravity/2
-				enemy.y+=gravity
-			else
-				enemy.x+=gravity/2
-				enemy.y+=gravity
-			end
-		end
-		if enemy.kind==grab_guy then
-			update_grab_guy(enemy)
-		elseif enemy.kind==knife_guy then
-			update_knife_guy(enemy)			
-		elseif enemy.kind==small_guy then
-			update_small_guy(enemy)	
-		elseif enemy.kind==stick_guy then
-			update_stick_guy(enemy)
-		end
-		enemy.flip_x=false
-		if enemy.facing==left then
-			enemy.flip_x=true
-		end
-		if is_offscreen(enemy) then
-			del(enemies,enemy)
 		end
 	end
 end
-]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
@@ -1474,12 +1423,12 @@ ccccc777777ccccccccccc7777cccccccccccc7777ccccccccccc777c777cccccccccc7777cccccc
 cccc777cc777ccccccccc1977cccccccccccc1977ccccccccccc777ccc77ccccccccc1977ccccccccccc777ccc77ccccccccccccc19777ccccccc677776ccccc
 ccc199cccc99ccccccccc19cccccccccccccc19cccccccccccc199ccc199ccccccccc19cccccccccccc199ccc199ccccccccccccc1c7199ccccccc6776cccccc
 ccc1111ccc111cccccccc111ccccccccccccc111ccccccccccc1111ccc111cccccccc111ccccccccccc1111ccc111ccccccccccccccc1111ccccccc66ccccccc
-cccccccc4444cccccccccccc4444cccc000009904444cccccccccccc4444ccccccc0cccccccccccccccccccccccccccccccccccccccccccc0000000000000000
-ccccccc4999cccccccccccc4999cccccccccc994999cccccccccccc4999ccccccccc0ccccccccccccccccccccccccccccccccccccccccccc0000000000000000
-ccccccc4919cccccccccccc4919c0ccccccccc64919cccccccccccc4919cccccccccc0ccccccccccccccccccccccccccccc4cccccccccccc0000000000000000
+cccccccc4444cccccccccccc4444cccc000009904444cccccccccccc4444ccccccc0cccccccccccccccccccccccccccccccccccccccccc0c0000000000000000
+ccccccc4999cccccccccccc4999cccccccccc994999cccccccccccc4999ccccccccc0cccccccccccccccccccccccccccccccccccccccc0cc0000000000000000
+ccccccc4919cccccccccccc4919c0ccccccccc64919cccccccccccc4919cccccccccc0ccccccccccccccccccccccccccccc4cccccccc0ccc0000000000000000
 ccccccc9999cc0ccccccccc9999c0ccccccccc69999cccccccccccc9999cc99ccccccc0cc4444cccccccccccc4444ccccc499ccccc99cccc0000000000000000
-ccccccc499ccc0ccccccccc499cc0ccccccccc6499ccccccccccccc499cc609cccccccc94999cccccccccccc4999cccccc4999cccc99cccc0000000000000000
-cccccc66446cc0cccccccc46444c0ccccccccc44444ccccccccccc66446606ccccccccc949196ccccccccccc4919cccccc4499c6666ccccc0000000000000000
+ccccccc499ccc0ccccccccc499cc0ccccccccc6499ccccccccccccc499cc609cccccccc94999cccccccccccc4999cccccc4999cccc09cccc0000000000000000
+cccccc66446cc0cccccccc46444c0ccccccccc44444ccccccccccc66446606ccccccccc949196ccccccccccc4919cccccc4499c6606ccccc0000000000000000
 ccccc6664446c0cccccccc66644c0ccccccccc46644cccccccccc66644466ccccccccccc99996ccccccccccc9999ccccccc4444466cccccc0000000000000000
 ccccc6644446c0cccccccc6664499ccccccccc4666699cccccccc6644446cccccccccccc49966ccccccccccc499cccccccc664444ccccccc0000000000000000
 ccccc664444699ccccccccc699499cccccccccc466699cccccccc664444ccccccccccc664446cccccccccc6644466699ccc66444466ccccc0000000000000000
