@@ -123,22 +123,7 @@ function center_print(text,xc,y,c)
 	print(text,x,y,c)
 end
 
-function collision(r1,r2)
-	function parse_rect(r)
-		return {
-			x1=r.x,
-			y1=r.y,
-			x2=r.x+r.width-1,
-			y2=r.y+r.height-1,
-		}
-	end
-	local rect1=parse_rect(r1)
-	local rect2=parse_rect(r2)
-	return rect1.x1<rect2.x2 and
-  rect1.x2>rect2.x1 and
-  rect1.y1<rect2.y2 and
-  rect1.y2>rect2.y1
-end
+
 
 -- ================
 -- levels
@@ -449,6 +434,7 @@ function test_input()
 			new_enemy(2,random_enemy_x(0))
 		elseif key=="4" then
 			new_enemy(3,random_enemy_x(0))
+			enemies[#enemies].active=true
 		end
 	end
 end
@@ -721,13 +707,35 @@ function update_camera(x,y)
 	end
 	camera(camera_x,camera_y)
 end
+
+-------------
+-- collisions
+-------------
+
+function collision(r1,r2)
+	function parse_rect(r)
+		return {
+			x1=r.x,
+			y1=r.y,
+			x2=r.x+r.width-1,
+			y2=r.y+r.height-1,
+		}
+	end
+	local rect1=parse_rect(r1)
+	local rect2=parse_rect(r2)
+	return rect1.x1<rect2.x2 and
+  rect1.x2>rect2.x1 and
+  rect1.y1<rect2.y2 and
+  rect1.y2>rect2.y1
+end
+
+
 -->8
 -- ===================
 -- player
 -- ===================
 
 function init_player()
-	debug('init_player')
 	player={
 		score=0,
 		x=0,
@@ -1079,26 +1087,23 @@ function new_enemy(kind,x)
 		kind=kind,
 		x=x,
 		y=baseline,
-		w_index=0,
-		health=1,
-		speed=1.5,
-		grabbing=false,
-		dead=false,
-		size=2,
-		knife=false,
-		facing=direction,
-		idle=0,
-		throwing=0,
-		attack_height=up,
-		cooldown=0,
-		scored=false,
-		shook=false,
 		body={
 			x=x,
 			y=baseline,
 			width=8,
 			height=16,
 		},
+		w_index=0,
+		health=1,
+		speed=1.5,
+		grabbing=false,
+		dead=false,
+		facing=right,
+		throwing=0,
+		attack_height=up,
+		cooldown=0,
+		scored=false,
+		shook=false,
 		direction=direction,
 		value=100,
 		swinging=0,
@@ -1107,12 +1112,13 @@ function new_enemy(kind,x)
 		tile_height=2,
 		boss=false,
 		active=false,
+		multiplier=1,
+		attacking=0
 	}
 	if kind==knife_guy then
 		enemy.health=2
 		enemy.value=200
 	elseif kind==small_guy then
-		enemy.body.y=player.y+8
 		enemy.body.height=8
 		enemy.body.width=8
 		enemy.tile_width=1
@@ -1154,30 +1160,50 @@ end
 
 -- update one enemy's movement
 function update_enemy(enemy)
+	-- update walking index
 	if ticks%3==0 then
 		enemy.w_index+=1
 		if enemy.w_index>1 then
 			enemy.w_index=0
 		end
 	end
+	-- face player (usually)
+	if enemy.locked_direction then
+		enemy.facing=enemy.locked_direction
+	else
+		if enemy.x<player.x then
+			enemy.facing=right
+		else
+			enemy.facing=left
+		end
+	end
+	-- should enemy run away?
 	if enemy.boss==false then
 		if (current_level%2==1 and player.x<min_x+boss_threshold) or
 				(current_level%2==0 and player.x>max_x-boss_threshold)	then
 			enemy.running=true
 		end
 	end
+	-- set collision body
 	enemy.body.x=enemy.x+4
 	enemy.body.y=enemy.y
 	if enemy.position==down then
 		enemy.body.y+=4
 		enemy.body.height=4
 	end
+	-- if no health then dead
+	if enemy.health<=0 then
+		enemy.dead=true
+	end
+	-- handling death/shookness
 	if enemy.dead or enemy.shook then
-		if enemy.scored==false and
-				enemy.shook==false then
+		-- add score if appropriate
+		if enemy.scored==false then
 			new_score(enemy.x,enemy.y-8,enemy.value*enemy.multiplier)
-			enemy.scored=true
+			player.score+=enemy.value
+			enemy.scored=true	
 		end
+		-- animated death movement
 		if enemy.facing==right then
 			enemy.x-=gravity/2
 			enemy.y+=gravity
@@ -1185,6 +1211,7 @@ function update_enemy(enemy)
 			enemy.x+=gravity/2
 			enemy.y+=gravity
 		end
+	-- move enemy if running
 	elseif enemy.running then
 		if enemy.x<player.x then
 			enemy.direction=left
@@ -1195,7 +1222,20 @@ function update_enemy(enemy)
 			enemy.facing=right
 			enemy.x+=enemy.speed
 		end
-	elseif collision(player.hitbox,enemy.body) and 
+	-- otherwise normal movement
+	else
+		if enemy.kind==grab_guy then
+			update_grab_guy(enemy)
+		elseif enemy.kind==knife_guy then
+			update_knife_guy(enemy)			
+		elseif enemy.kind==small_guy then
+			update_small_guy(enemy)	
+		elseif enemy.kind==stick_guy then
+			update_stick_guy(enemy)
+		end
+	end
+	-- enemy ran into strike
+	if collision(player.hitbox,enemy.body) and 
 			(player.punching==9 or player.kicking==9) then
 		new_effect(enemy_hit_effect,player.hitbox.x,player.hitbox.y)	
 		player.strike_hit=3
@@ -1207,41 +1247,35 @@ function update_enemy(enemy)
 		end
 		sfx(-1)
 		sfx(10)
-	else
-		if enemy.health<=0 then
-			enemy.dead=true
-		end
-		if enemy.kind==grab_guy then
-			update_grab_guy(enemy)
-		elseif enemy.kind==knife_guy then
-			update_knife_guy(enemy)			
-		elseif enemy.kind==small_guy then
-			update_small_guy(enemy)	
-		elseif enemy.kind==stick_guy then
-			update_stick_guy(enemy)
-		end
-		enemy.flip_x=false
-		if enemy.facing==left then
-			enemy.flip_x=true
-		end
 	end
+	-- sprite flip
+	if enemy.facing==left then
+		enemy.flip_x=true
+	else
+		enemy.flip_x=false
+	end	
 end
 
 -- updates for grab_guy
 function update_grab_guy(enemy)
+	-- default sprite
 	enemy.sprite=100
-	if enemy.dead or enemy.shook then
-		enemy.sprite=106
-	elseif enemy.grabbing then
+	-- grabbing sprite
+	if enemy.grabbing then
 		enemy.sprite=104
+	-- dead sprite
+	elseif enemy.dead or enemy.shook then
+		enemy.sprite=106
+	-- normal movement
 	else
-		enemy.facing=enemy.direction
+		enemy.sprite=100+enemy.w_index*2
+		-- always move towards player
 		if enemy.x<player.x then
 			enemy.x+=enemy.speed
 		elseif enemy.x>player.x then
 			enemy.x-=enemy.speed
 		end
-		enemy.sprite+=enemy.w_index*2
+		-- if touching then grab
 		if collision(enemy.body,player.body) then
 			player.grabbed=5
 			player.jump_dir=0
@@ -1252,22 +1286,20 @@ end
 
 -- updates for knife_guy
 function update_knife_guy(enemy)
-
+	-- sweet spot for throwing
 	local target=0
 	local window=8	
-
 	enemy.sprite=128
-	enemy.facing=enemy.direction
-
-	if enemy.direction==right then
+	-- set target based on side
+	if enemy.x<player.x then
 		target=player.x-32
-	elseif enemy.direction==left then
+	else
 		target=player.x+32
 	end
-	
+	-- dead sprite
 	if enemy.dead==true then
 		enemy.sprite=140
-
+	-- movement during throw
 	elseif enemy.throwing>0 then
 		if enemy.throwing>=5 then
 			enemy.sprite=132
@@ -1288,48 +1320,83 @@ function update_knife_guy(enemy)
 			enemy.attack_height*=-1
 		end
 		enemy.throwing-=1
-		
+	-- cooldown after throwing	
 	elseif enemy.cooldown>0 then
 		enemy.cooldown-=1
-	
+	-- normal movement
 	else
+		-- if less than sweet spot
 		if enemy.x<target-8 then
 			enemy.sprite+=enemy.w_index*2
 			enemy.x+=enemy.speed
-			enemy.facing=right
+		-- if more than sweet spot
 		elseif enemy.x>target+8 then
 			enemy.sprite+=enemy.w_index*2
 			enemy.x-=enemy.speed
-			enemy.facing=left
+		-- if sweet spot then throw
 		else
 			enemy.throwing=10
 			enemy.cooldown=50
-		end
-	
-	end
-	
+		end	
+	end	
 end
 
 -- updates for small guy
 function update_small_guy(enemy)
-	enemy.body.x=enemy.x
+	-- sweet spot for jump attack
+	local window=20
+	local buffer=5
+	-- body is smaller/lower
+	enemy.body.x=enemy.x+2
 	enemy.body.y=enemy.y+8
+	-- default sprite
 	enemy.sprite=108
+	-- dead sprite
 	if enemy.dead==true then
 		enemy.sprite=108
+	-- grabbing sprite
 	elseif enemy.grabbing==true then
 		enemy.sprite=109
-	else
-		enemy.sprite+=enemy.w_index
-		if collision(enemy.body,player.body) then
-			player.grabbed=10
-			enemy.grabbing=true
+	-- attacking
+	elseif enemy.attacking>0 then
+		enemy.x+=enemy.locked_direction*enemy.speed
+		if enemy.attacking>10 then
+			enemy.y-=1
 		else
-			if enemy.direction==right then
+			enemy.y+=1
+		end
+		enemy.attacking-=1	
+	-- normal movement
+	else
+		-- walking sprite
+		enemy.sprite+=enemy.w_index
+		-- always move towards player
+		if enemy.x<player.x then
+			-- attack if in window
+			if enemy.x>=player.x-window-buffer and
+					enemy.x<=player.x-window+buffer and
+					player.position==down then
+				enemy.attacking=window
+				enemy.locked_direction=right
+			else
 				enemy.x+=enemy.speed
+			end
+		elseif enemy.x>player.x then
+			if enemy.x<=player.x+15+window+buffer and
+					enemy.x>=player.x+15+window-buffer and
+					player.position==down then
+				enemy.attacking=window
+				enemy.locked_direction=left
 			else
 				enemy.x-=enemy.speed
-			end				
+			end
+		end
+		-- if touching then grab
+		if collision(enemy.body,player.body) and
+				enemy.locked_direction==nil then
+			player.grabbed=5
+			player.jump_dir=0
+			enemy.grabbing=true
 		end
 	end
 end
@@ -1471,22 +1538,22 @@ cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000ccc
 cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777cccccc0977cccccccccccccccc09777ccc
 ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990cccc09cccccccccccccccccc0c7099cc
 ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000cccc0cccccccccccccccccccccc0000c
-ccccccccbbbbbb3688888888888a888800000000cccccccc00000000000000000000000000000000000000000000000000000000ccc77ccccccccaa3333c38cc
-ccccccccbbbbb36baaaaa8aaaa8a8aaa00000000cccc33cc00000000000000000000000000000000000000000000000000000000cc7dd7ccccccc833883833cc
-ccccccccbbbb36bbccccc8a88a8a8a8800000000ccc3333c00000000000000000000000000000000000000000000000000000000cc7777cccccc8c833333c7cc
-ccccccccbbb36bbbccccc8a8888a888800000000ccc37ccc00000000000000000000000000000000000000000000000000000000ccc7dcccccccc8c83ac7cccc
-ccccccccbb36bbbbccccc8aaaa8a8aaa00000000cccc37cc00000000000000000000000000000000000000000000000000000000ccd777ccccccccc83aaccccc
-ccccccccb36bbbbbccccc888888a888800000000cc88c37c00000000000000000000000000000000000000000000000000000000cc7dd7cccccccc8c83baaccc
-cccccccc33333333cccccccccc8a8ccc00000000c833837c00000000000000000000000000000000000000000000000000000000cc7777ccccccccccc333bacc
-cccccccc00000000cccccccccc8a8ccc0000000083c337cc00000000000000000000000000000000000000000000000000000000ccc7dcccccccccccc8383bac
-ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8ccccccccccccd77cccccc77ccccccccccccc383bac
-4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aacc8888ccccc7dd7cccc7dd7cccccccc8cc833bbac
-ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777cc9998cccc7777cccc7777cccccc8c8ccc3bbacc
-ffffffff44ffffff8888888888888888ca3bb3acccc377ccbcc8cccbffbb88ffeeffeeff7ccccfcc8a77778ccc9198ccccd7ddccccc7dcccccccc8a8c3bbaccc
-44444444ccc555ccaaaaaaaaaaaaaaaacba33abccccc337cc8cccc8cfff88fffffeeffeeccfcccc7c8aaa777cc9999ccccd777ccccd777ccccc88aa338bacccc
-ffffffffcccc67ccccccccccccccccccc3baab3ccccccc37cb3cc3bcff88bbffffeeffeec7ffcf7ccc888aacccc998cccc7dd7cccc7dd7ccccccc8333baccccc
-ffffffffccccc67ccccccccccccccccccc3bb3ccc8888c373c8338c3c88ffbbcceffeefcc77cc77cccccc8cccccccccccc7777cccc7777cccccccccc3acccccc
-ffffffffcccccc67ccccccccccccccccccc33ccc83c3337cc3b88b3cccffffcccceeffccccc7ccccccccccccccccccccccc7ddccccc7dccccccccccccccccccc
+ccccccccbbbbbb3688888888888a888800000000cccccccc0000000000000000000000000000000000000000000000000000000000000000cccccaa3333c38cc
+ccccccccbbbbb36baaaaa8aaaa8a8aaa00000000cccc33cc0000000000000000000000000000000000000000000000000000000000000000ccccc833883833cc
+ccccccccbbbb36bbccccc8a88a8a8a8800000000ccc3333c0000000000000000000000000000000000000000000000000000000000000000cccc8c833333c7cc
+ccccccccbbb36bbbccccc8a8888a888800000000ccc37ccc0000000000000000000000000000000000000000000000000000000000000000ccccc8c83ac7cccc
+ccccccccbb36bbbbccccc8aaaa8a8aaa00000000cccc37cc0000000000000000000000000000000000000000000000000000000000000000ccccccc83aaccccc
+ccccccccb36bbbbbccccc888888a888800000000cc88c37c0000000000000000000000000000000000000000000000000000000000000000cccccc8c83baaccc
+cccccccc33333333cccccccccc8a8ccc00000000c833837c0000000000000000000000000000000000000000000000000000000000000000ccccccccc333bacc
+cccccccc00000000cccccccccc8a8ccc0000000083c337cc0000000000000000000000000000000000000000000000000000000000000000ccccccccc8383bac
+ffffffff7ccccccccccccccccc8a8ccccccaacccccccccccccccccccccffffccccffeecccccc7cccccccc8cc000000000000000000000000cccccccccc383bac
+4444444467cccccccccccccccc8a8ccccca33acccccc33cccccccccccbffff8ccfeeffecc77cc77ccc888aac000000000000000000000000cccccc8cc833bbac
+ffffffffc67cccccaaaaaaaaaaaaaaaaccbaabccccc3333cccccc8ccfbbff88feeffeeffc7fcff7cc8aaa777000000000000000000000000cccc8c8ccc3bbacc
+ffffffff44ffffff8888888888888888ca3bb3acccc377ccbcc8cccbffbb88ffeeffeeff7ccccfcc8a77778c000000000000000000000000ccccc8a8c3bbaccc
+44444444ccc555ccaaaaaaaaaaaaaaaacba33abccccc337cc8cccc8cfff88fffffeeffeeccfcccc7c8aaa777000000000000000000000000ccc88aa338bacccc
+ffffffffcccc67ccccccccccccccccccc3baab3ccccccc37cb3cc3bcff88bbffffeeffeec7ffcf7ccc888aac000000000000000000000000ccccc8333baccccc
+ffffffffccccc67ccccccccccccccccccc3bb3ccc8888c373c8338c3c88ffbbcceffeefcc77cc77cccccc8cc000000000000000000000000cccccccc3acccccc
+ffffffffcccccc67ccccccccccccccccccc33ccc83c3337cc3b88b3cccffffcccceeffccccc7cccccccccccc000000000000000000000000cccccccccccccccc
 4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccccc2222ccccccccccccccccccccccccccccccccccccccccc44cccccccccc
 8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999cccccccccccc2999ccccccccccccccccccccccccccccccccccccccccc4994cccc88ccc
 8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc2929cccccccccccc2929cccccccccccc2929cccccccc4ccccccccccccccccccccccccccccccc8339cccc3888cc
