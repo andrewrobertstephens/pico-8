@@ -8,11 +8,10 @@ __lua__
 -- version 0.1
 -- ===================
 
-debug=true
-skip_intro=true
-test_mode=true
+test_mode=false
 show_bodies=true
-onscreen_debug=false
+show_hitboxes=true
+skip_intro=true
 logfile="kungfu"
 
 palt(0,false)
@@ -23,11 +22,10 @@ left=-1
 right=1
 up=-1
 down=1
-high=1
-low=0
 baseline=65
 gravity=2
-ticks=0
+jump_max=18
+level_size=128
 mode_menu=0
 mode_intro=1
 mode_start=2
@@ -36,7 +34,10 @@ mode_complete=4
 mode_death=5
 mode_gameover=6
 mode_win=7
-level_size=128
+strike_duration=15
+strike_contact=10
+strike_hold=4
+ticks=0
 
 -- globals
 --first_run=true
@@ -44,8 +45,12 @@ min_x=0
 max_x=level_size*8-1
 current_level=1
 
+-- ----------------------------
+-- pico-8 main callbacks
+-- ----------------------------
+
 function _init()	
-	if debug then
+	if test_mode then
 			poke(0x5f2d,1)
 	end
 	init_player()
@@ -92,10 +97,23 @@ function _draw()
 		local x=camera_x
 		local y=camera_y
 		print('test mode',x,y,7)
-		draw_osd_debug()
+		draw_test_osd()
 	end
 end
 
+-- ----------------------------
+-- helper routines
+-- ----------------------------
+
+-- print something centred
+function center_print(text,xc,y,c)
+	local w=#text*4
+	local x=xc-w/2-4
+	rectfill(x-1,y-1,x+w-1,y+5,0)
+	print(text,x,y,c)
+end
+
+-- change game mode
 function change_mode(mode)
 	game_mode=mode
 	if game_mode==mode_intro then
@@ -113,17 +131,30 @@ function change_mode(mode)
 	end
 end
 
-function center_print(text,xc,y,c)
-	local w=#text*4
-	local x=xc-w/2-4
-	rectfill(x-1,y-1,x+w-1,y+5,0)
-	print(text,x,y,c)
+-- is there a collision?
+function collision(r1,r2)
+	function parse_rect(r)
+		return {
+			x1=r.x,
+			y1=r.y,
+			x2=r.x+r.width-1,
+			y2=r.y+r.height-1,
+		}
+	end
+	local rect1=parse_rect(r1)
+	local rect2=parse_rect(r2)
+	return rect1.x1<rect2.x2 and
+  rect1.x2>rect2.x1 and
+  rect1.y1<rect2.y2 and
+  rect1.y2>rect2.y1
 end
 
--- ------
--- levels
--- ------
+-- print to log
+function debug(message)
+	printh(message,"kungfu")
+end
 
+-- draw the current level
 function draw_level()
 	-- draw level
 	for i=-6,level_size/4+6 do
@@ -143,20 +174,8 @@ function draw_level()
 	spr(192,max_x-boss_threshold,baseline)
 end
 
-function is_offscreen(r)
-	local cx=camera_x
-	return 
-			(r.direction==left and r.x<cx-r.tile_width*8) or
-			(r.direction==right and r.x>cx+127+r.tile_width*8) or
-			r.y>127
-end
-
--- -----------------
--- on screen display
--- -----------------
-
+-- draw the osd
 function draw_osd()
-
  function get_boss_health()
   for enemy in all(enemies) do
    if enemy.boss then
@@ -165,7 +184,6 @@ function draw_osd()
   end
   return 50
  end
-
 	function draw_osd_level(x,y)
 		for i=1,3 do
 			local c=12
@@ -178,99 +196,204 @@ function draw_osd()
 			end
 		end	
 	end
-
 	function health_bar(x,y,decimal,c)
 		rectfill(x,y,x+15,y+4,12)
 		local amount=decimal*15
 		rectfill(x,y,x+amount,y+4,c)
 	end
-
 	local x=camera_x+5
 	local y=camera_y+5
-
 	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,0)
-
 	print('player',x,y,9)
-	health_bar(x+25,y,player.health/100,9)
-	
+	health_bar(x+25,y,player.health/100,9)	
 	print(' enemy',x,y+8,8)
-	health_bar(x+25,y+8,get_boss_health()/100,8)
-	
+	health_bar(x+25,y+8,get_boss_health()/100,8)	
 	draw_osd_level(x+50,y)
-
 	print("life:1",x+55,y+8,7)
 	print("000000",x+91,y,7)
 	print("time:"..flr(level_timer),x+85,y+8,7)
-
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
-
-
 end
 
--- ===================
--- projectiles
--- ===================
-
-function init_projectiles()
-	knife=0
-	projectiles={}
-end
-
-function draw_projectiles()
-	for projectile in all(projectiles) do
-		spr(98,projectile.x,projectile.y,1,1,projectile.flip_x)
+function draw_test_osd()
+	function debug_print(label,var)
+		color(7)
+		if var~=nil then
+			local text=label..':'..var
+			print(text)
+		end		
+	end
+	local x=0
+	local y=0
+	if camera_x~=nil then
+		x=camera_x
+	end
+	if camera_y~=nil then
+		y=camera_y
+	end
+	cursor(x,y)
+	rectfill(x,y+90,x+127,y+127,0)
+	cursor(x,y+91)
+	debug_print('game_mode',game_mode)
+	debug_print('camera_x',camera_x)
+	debug_print('camera_y',camera_y)
+	debug_print('enemies',#enemies)
+	if player~=nil then
+		cursor(x+64,y+91)
+		debug_print('player.x',player.x)
+		debug_print('player.y',player.y)
+		if player.jumping>0 then
+			debug_print('jumping',player.jumping)
+		end
+		if player.punching>0 then
+			debug_print('punching',player.punching)
+		end
+		if player.kicking>0 then
+			debug_print('kicking',player.kicking)
+		end
 	end
 end
 
-function new_projectile(kind,x,y,xspeed,yspeed)
-	projectile={
-		kind=kind,
-		x=x,
-		y=y,
-		xspeed=xspeed,
-		yspeed=yspeed,
-		body={
-			x=x,
-			y=y,
-			width=4,
-			height=4
-		},
-		tile_width=1,
-		tile_height=1,
+-- is strike a climax
+function is_climax(strike)
+	return strike>strike_contact-strike_hold and
+		strike<strike_contact+strike_hold
+end
+
+-- is object offscreen?
+function is_offscreen(r)
+	local cx=camera_x
+	return 
+			(r.direction==left and r.x<cx-r.tile_width*8) or
+			(r.direction==right and r.x>cx+127+r.tile_width*8) or
+			r.y>127
+end
+
+-- return new entity
+function new_entity()
+	return {
+		x=0,
+		y=baseline,
+		w_index=0,
 		direction=right,
+		position=up,
+		speed=1,
+		health=100,
+		height=16,
+		hurt=0,
+		tile_height=2,
+		tile_width=2,
 	}
-	if xspeed<0 then
-		projectile.direction=left
+end
+
+-- process all collisions
+function process_collisions()
+	-- enemy grabs
+	for enemy in all(enemies) do
+		if collision(enemy.body,player.body) and
+				enemy.grabbing==false then
+			player.grabbed=3
+			player.jump_dir=0
+			enemy.grabbing=true
+		end
 	end
-	add(projectiles,projectile)
+	-- player strikes
+	for enemy in all(enemies) do
+		if is_climax(player.punching) or
+				is_climax(player.kicking) then
+			if collision(player.hitbox,enemy.body) then
+				new_effect(enemy_hit_effect,player.hitbox.x,player.hitbox.y)	
+				player.strike_hit=3
+				enemy.health-=1
+				enemy.multiplier=1
+				if enemy.boss==false and
+						player.punching==9 then
+					enemy.multiplier=2
+				end
+				sfx(-1)
+				sfx(10)
+			end
+		end		
+	end
+	-- enemy strikes
 end
 
-function update_projectiles()
-	for projectile in all(projectiles) do
-		projectile.x+=projectile.xspeed
-		projectile.y+=projectile.yspeed
-		if kind==0 then
-			projectile.sprite=98
+-- input for test mode
+function test_input()
+	local key=stat(31)
+	local num=tonum(key)
+	if game_mode==mode_play then
+		if num then
+			new_enemy(num-1,random_enemy_x(0))
+			if enemies[#enemies].boss then
+				enemies[#enemies].active=true
+			end
 		end
-		projectile.flip_x=false
-		if projectile.direction==left then
-			projectile.flip_x=true
-		end
-		projectile.body.x=projectile.x
-		projectile.body.y=projectile.y
-		if collision(projectile.body,player.body) then
-			player.hurt=5
-			player.health-=10
-			del(projectiles,projectile)
-		elseif	is_offscreen(projectile) then
-			del(projectiles,projectile)
-		end
+	end
+end
+
+-- update object's body
+function update_body(o)
+	o.body={}
+	o.body.width=8
+	o.body.height=16
+	o.body.x=o.x+4
+	o.body.y=o.y
+	if o.tile_height==1 then
+		o.body.height=8
+	end
+	if o.position==down then
+		o.body.y=o.y+8
+		o.body.height=8
+	end
+end
+
+-- update camera
+function update_camera(x,y)
+	camera_x=player.x-56	
+	camera_y=baseline-66
+	if camera_x<min_x then
+		camera_x=min_x
+	elseif camera_x>max_x-127 then
+		camera_x=max_x-127
 	end	
+	-- manual override
+	if x~=nil then
+		camera_x=x
+	end
+	if y~=nil then
+		camera_y=y
+	end
+	camera(camera_x,camera_y)
 end
 
--- -------
+-- update object's hitbox
+function update_hitbox(o)
+	o.hitbox={}
+	o.hitbox.width=4
+	o.hitbox.height=4
+	o.hitbox.x=o.x
+	o.hitbox.y=o.y
+	if o.jumping==nil then
+		o.jumping=0
+	end
+	if o.kicking==nil then
+		o.kicking=0
+	end
+	if o.direction==left then
+		o.hitbox.x=o.x-2
+	else
+		o.hitbox.x=o.x+14
+	end
+	if (o.jumping>0 and o.kicking>0) or
+			o.position==down then
+		o.hitbox.y=o.y+8
+	end
+end
+
+-- ----------------------------
 -- effects
--- -------
+-- ----------------------------
 
 function init_effects()
 	effects={}
@@ -309,703 +432,9 @@ function draw_effects()
 	end
 end
 
--- ------
--- scores
--- ------
-
-function init_scores()
-	scores={}
-end
-
-function draw_scores()
- for score in all(scores) do
- 	print(score.n,score.x+1,score.y+1,0)
-		print(score.n,score.x,score.y,7)
- end
-end
-
-function new_score(x,y,n)
-	local score={
-		x=x,
-		y=y,
-		n=n,
-		count=10
-	}
-	add(scores,score)
-end
-
-function update_scores()
-	for score in all(scores) do
-		score.count-=1
-		if score.count<1 then
- 		del(scores,score)
- 	end
-	end
-end
-
--- -------
--- testing
--- -------
-
-function debug(message)
-	printh(message,"kungfu")
-end
-
-
-function draw_osd_debug()
-
-	function debug_print(label,var)
-		color(7)
-		if var~=nil then
-			local text=label..':'..var
-			print(text)
-		end		
-	end
-		
-	local x=0
-	local y=0
-	if camera_x~=nil then
-		x=camera_x
-	end
-	if camera_y~=nil then
-		y=camera_y
-	end
-
-	cursor(x,y)
-	
-	rectfill(x,y+90,x+127,y+127,0)
-
-	cursor(x,y+91)
-	debug_print('game_mode',game_mode)
-	debug_print('camera_x',camera_x)
-	debug_print('camera_y',camera_y)
-	debug_print('enemies',#enemies)
-	
-	if player~=nil then
-		cursor(x+64,y+91)
-		debug_print('player.x',player.x)
-		debug_print('player.y',player.y)
-		if player.jumping>0 then
-			debug_print('jumping',player.jumping)
-		end
-		if player.punching>0 then
-			debug_print('punching',player.punching)
-		end
-		if player.kicking>0 then
-			debug_print('kicking',player.kicking)
-		end
-	end
-	
-end
-
-function test_input()
-	local key=stat(31)
-	local num=tonum(key)
-	if game_mode==mode_play then
-		if num then
-			new_enemy(num-1,random_enemy_x(0))
-			if enemies[#enemies].boss then
-				enemies[#enemies].active=true
-			end
-		elseif key=="b" then
-			show_bodies=not show_bodies
-		end
-	end
-end
-
--- ============
--- menu program
--- ============
-
-function mode_menu_update()
-	if btn(4) and btn(5) then
-		if skip_intro then
-			change_mode(mode_start)
-		else
-			change_mode(mode_intro)
-		end
-	end
-end
-
--- draw sprite of string rows
-function str_spr(str,sx,sy)
-	local y=sy
-	for row in all(str) do
-		for i=1,#row do
-			local x=sx+i-1
-			local c=tonum(sub(row,i,i))
-			pset(x,y,c)
-		end
-		y+=1
-	end
-end
-
-function mode_menu_draw()
-	local title_spr={
-		'00990099009900990099999000099999000000000999999009900990',
-		'08990899089908990899999900999999000000008999999089908990',
-		'08999999089908990899889908998880000000008998880089908990',
-		'08999990089908990899089908990000000000008999999089908990',
-		'08999990089908990899089908990099000000008999999089908990',
-		'08998899089999990899089908999999000000008998880089999990',
-		'08990899089999900899089908999999000000008990000089999900',
-		'08800880088888000880088008888880000000008880000088888000',
-	}
-	cls(0)
-	local y=32
-	for i=0,112,16 do
-		spr(96,i,y)
-		spr(96,i,y+20)
-		spr(97,i+8,y)
-		spr(97,i+8,y+20)
-	end
-	--spr(70,64-7*8/2,y+10,7,1)
-	cursor(64-7*8/2,y+10)
-	color(7)
-	str_spr(title_spr,64-7*8/2,y+10)
-	
-	center_print("press 🅾️+❎ to start",64,y+40,7)
-	spr(78,5,68,2,2)
-	spr(78,106,68,2,2,true)
-end
-
--- =============
--- intro program
--- =============
-
-function mode_intro_init()
-	--init_player()
-	intro_timer=160
-	update_camera()
-	music(5)
-end
-
-function mode_intro_update()
-	intro_timer-=1
-	update_player()
-	--update_player()
-	--update_camera()
-	if intro_timer<0 then
-		change_mode(mode_start)
-	end
-end
-
-function mode_intro_draw()
-	cls(12)
-	draw_level()
-	draw_player()
-	camera(camera_x,camera_y)
-	local xc=camera_x+64
-	center_print("level "..current_level,xc,50,7,true)
-	draw_osd()
-end
-
--- =============
--- start program
--- =============
-
-function mode_start_init()
-	level_timer=2000
-	init_player()
-	init_enemies()
-	init_projectiles()
-	init_scores()
-	update_camera()
-	start_timer=56
-	sfx(8)
-end
-
-function mode_start_update()
-	update_player()
-	start_timer-=1
-	if start_timer<1 then
-		change_mode(mode_play)
-	end
-end
-
-function mode_start_draw()
-	cls(12)
-	draw_level()
-	draw_player()
-	update_camera()
-	local xc=camera_x+64
-	center_print("level "..current_level,xc,50,7,true)
-	draw_osd()
-end
-
--- ===================
--- play (main) program
--- ===================
-
-function mode_play_init()
-	music(0)
-	if current_level==1 then
-		new_enemy(stick_guy,min_x)
-	end
-	init_effects()
-end
-
-function mode_play_update()
-	update_effects()
-	update_enemies()
-	update_player()
-	update_projectiles()
-	update_scores()
-	update_camera()
-	if test_mode then
-		test_input()
-	end
-	level_timer-=0.5
-end
-
-function mode_play_draw()
-	cls(12)
-	draw_level()
-	draw_projectiles()
-	draw_player()
-	draw_enemies()
-	draw_effects()
-	draw_scores()
-	draw_osd()
-end
-
--- =============
--- death program
--- =============
-
-function mode_death_init()
-	music(-1)
-end
-
-function mode_death_update()
-	update_player()
-end
-
-function mode_death_draw()
-	cls(12)
-	draw_level()
-	draw_projectiles()
-	draw_player()
-	draw_enemies()
-	draw_scores()
-	draw_effects()
-	draw_osd()
-end
-
--- ======================
--- complete level program
--- ======================
-
-function mode_complete_init()
-	music(-1)
-	if current_level%2==1 then
-		complete_x=0
-		complete_direction=left
-	else
-		complete_x=max_x-128
-		complete_direction=right
-	end
-	complete_timer=0
-	player.walking=false
-end
-
-function mode_complete_update()
-	
-	if complete_timer<=48 then
-		complete_x+=complete_direction
-	else
-		player.x+=complete_direction
-		player.y-=1
-		update_player()
-	end
-
-	if complete_timer>100 then
-		change_mode(mode_tally)
-	end
-	
-	update_player()
-	update_camera(complete_x,camera_y)
-	
-	complete_timer+=1
-
-end
-
-function mode_complete_draw()
-	cls(12)
-	draw_level()
-	draw_player()
-	draw_osd()
-end
-
--- --------------
--- tally program
--- --------------
-
-function mode_tally_init()
-	current_level+=1
-	change_mode(mode_start)
-end
-
-function mode_tally_update()
-end
-
-function mode_tally_draw()
-end
-
--- =================
--- game over program
--- =================
-
--- ================
--- game win program
--- ================
-
--- ------
--- camera
--- ------
-
-function update_camera(x,y)
-	camera_x=player.x-56	
-	camera_y=baseline-66
-	if camera_x<min_x then
-		camera_x=min_x
-	elseif camera_x>max_x-127 then
-		camera_x=max_x-127
-	end	
-	-- manual override
-	if x~=nil then
-		camera_x=x
-	end
-	if y~=nil then
-		camera_y=y
-	end
-	camera(camera_x,camera_y)
-end
-
--------------
--- collisions
--------------
-
-function collision(r1,r2)
-	function parse_rect(r)
-		return {
-			x1=r.x,
-			y1=r.y,
-			x2=r.x+r.width-1,
-			y2=r.y+r.height-1,
-		}
-	end
-	local rect1=parse_rect(r1)
-	local rect2=parse_rect(r2)
-	return rect1.x1<rect2.x2 and
-  rect1.x2>rect2.x1 and
-  rect1.y1<rect2.y2 and
-  rect1.y2>rect2.y1
-end
-
-
--->8
--- ===================
--- player
--- ===================
-
-function init_player()
-	player={
-		score=0,
-		x=0,
-		y=baseline,
-		walking=false,
-		w_index=0,
-		direction=right,
-		position=up,
-		kicking=0,
-		punching=0,
-		jumping=0,
-		speed=1,
-		btnup_down=false,
-		btn4_down=false,
-		btn5_down=false,
-		btnleft_down=false,
-		btnright_down=false,
-		body={
-			x=0,
-			y=0,
-			width=8,
-			height=16
-		},
-		hitbox={
-			x=0,
-			y=0,
-			width=4,
-			height=4
-		},
-		sprite=0,
-		grabbed=0,
-		hold_time=6,
-		health=100,
-		strike_hit=0,
-		width=8,
-		height=16,
-		hurt=0,
-		jump_max=15,
-		jump_dir=0,
-		tile_size=2,
-	}
-	if current_level%2==1 then
-		player.x=max_x-16
-		player.direction=left
-	end
-end
-
-function update_player()
-	if ticks%4==0 then
-		player.w_index+=1
-		if player.w_index>1 then
-			player.w_index=0
-		end
-	end	
-	if game_mode==mode_start then
-		player.walking=true
-		player.x+=player.speed*player.direction
-	elseif game_mode==mode_play then
-		player.last_direction=player.direction
-		if btn(⬅️) and player.jumping==0 then
-			player.direction=left
-		elseif btn(➡️) and player.jumping==0 then
-			player.direction=right
-		end
-		if btn(⬇️) then
-			player.position=down
-		elseif player.punching==0 and player.kicking==0 then
-			player.position=up
-		end
-		if btn(⬆️) and player.grabbed==0 then
-			if player.btnup_down==false then
-				if player.y==baseline then
-					player.jumping=player.jump_max
-				end
-				player.jump_dir=0
-				if btn(⬅️) then
-					player.jump_dir=left
-				elseif btn(➡️) then
-					player.jump_dir=right
-				end
-			end
-			player.btnup_down=true
-		else
-			player.btnup_down=false
-		end
-		if btn(4) and player.grabbed<1 then
-			if player.btn4_down==false then
-				player.kicking=10
-				sfx(9)
-			end
-			player.btn4_down=true
-		else
-			player.btn4_down=false
-		end
-		if btn(5) and player.grabbed<1 then
-			if player.btn5_down==false then
-				player.punching=10
-				sfx(9)
-			end
-			player.btn5_down=true
-		else
-			player.btn5_down=false
-		end
-		if btn(⬅️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and 
-				player.position==up then
-			player.x-=player.speed
-			player.walking=true
-		elseif btn(➡️) and 
-				player.jumping<1 and
-				player.kicking<1 and 
-				player.punching<1 and 
-				player.grabbed<1 and
-				player.position==up then
-			player.x+=player.speed
-			player.walking=true
-		else
-			player.walking=false
-			player.w_index=0
-		end
-
-		if player.last_direction!=player.direction then
-			player.grabbed-=1
-			if player.grabbed<0 then
-				player.grabbed=0
-			end		
-		end		
-		if player.grabbed>1 then
-				player.health-=0.5
-		else
-			for enemy in all(enemies) do
-				if enemy.grabbing==true then
-					enemy.shook=true
-				end
-			end
-		end
-		-- apply gravity/momentum
-		if player.jumping>0 then
-			player.x+=player.jump_dir*player.speed
-		end
-		if player.jumping>player.jump_max/2 then
-			player.y-=gravity
-		else
-			player.y+=gravity
-			if player.y>baseline then
-				player.y=baseline
-			end
-		end
-		player.x2=player.x+16
-		player.y2=player.y+16
-		player.kicking-=1
-		if player.kicking<0 then
-			player.kicking=0
-		end
-		player.punching-=1
-		if player.punching<0 then
-			player.punching=0
-		end
-		player.jumping-=1
-		if player.jumping<0 then
-			player.jumping=0
-		end
-		player.body.x=player.x+4
-		player.body.y=player.y
-		player.body.height=16
-		if player.position==down then
-			player.body.y+=8
-			player.body.height=8
-		end
-		-- update the hitbox
-		player.hitbox.width=4
-		player.hitbox.height=4
-		if player.direction==right then
-			player.hitbox.x=player.x+15
-		else
-			player.hitbox.x=player.x-4
-		end
-		player.hitbox.y=player.y
-		if player.jumping>0 then
-			if player.kicking>0 then
-				player.hitbox.y+=8
-				player.hitbox.height=8
-			end		
-		elseif player.position==down then
-			player.hitbox.y+=8		
-		end
-		if player.punching>0 then
-			if player.direction==right then
-				player.hitbox.x-=1
-			else
-				player.hitbox.x+=1
-			end
-		end
-		if player.strike_hit>0 then
-			player.strike_hit-=1
-		end
-		if player.hurt>0 then
-			player.hurt-=1
-		end		
-		if player.health<=0 then
-			if test_mode==false then
-				change_mode(mode_death)
-			end
-		end
-		if (current_level%2==1 and player.x<=min_x) or
-				(current_level%2==0 and player.x+15>=max_x) then
-			change_mode(mode_complete)
-		end
-	elseif game_mode==mode_death then
-		if player.direction==left then
-			player.x+=gravity/2
-		else
-			player.x-=gravity/2
-		end
-		player.y+=gravity
-		if player.y>camera_y+128 then
-			change_mode(mode_start)
-		end				
-	elseif game_mode==mode_complete then
-		if player.w_index==0 then
-			player.sprite=2
-		else
-			player.sprite=6
-		end
-	end
-	player.sprite=0
-	if game_mode==mode_death then
-		player.sprite=46
-	else
-		if player.jumping>0 then
-			player.sprite=2
-			if player.kicking>player.hold_time then
-				player.sprite=38
-			elseif player.kicking>0 then
-				player.sprite=6
-			elseif player.punching>player.hold_time then
-				player.sprite=40
-			elseif player.punching>0 then
-				player.sprite=6
-			end
-		elseif player.hurt>0 then
-			player.sprite=36
-		elseif player.position==up then
-			if player.kicking>player.hold_time then
-				player.sprite=8
-			elseif player.kicking>0 then
-				player.sprite=6
-			elseif player.punching>player.hold_time then
-				player.sprite=12
-			elseif player.punching>0 then
-				player.sprite=10
-			elseif player.walking==true then
-				if player.w_index==3 then
-					player.sprite=2
-				else
-					player.sprite=player.w_index*2
-				end
-			end
-		else
-			player.sprite=14
-			if player.kicking>player.hold_time then
-				player.sprite=42
-			elseif player.kicking>0 then
-				player.sprite=14
-			elseif player.punching>player.hold_time then
-				player.sprite=34
-			elseif player.punching>0 then
-				player.sprite=32
-			end
-		end
-	end
-	player.flip_x=false
-	if player.direction==left then
-		player.flip_x=true
-	end
-end
-
-function draw_player()
-	if show_bodies then
-		rectfill(
-			player.hitbox.x,
-			player.hitbox.y,
-			player.hitbox.x+player.hitbox.width,
-			player.hitbox.y+player.hitbox.height,
-			10
-		)
-	end
-	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
-end
--->8
--- ===================
+-- ----------------------------
 -- enemies
--- ===================
+-- ----------------------------
 
 function init_enemies()
 	grab_guy=0
@@ -1057,7 +486,7 @@ function more_enemies()
 	end
 end
 
--- return a new enemy
+-- create new enemy
 function new_enemy(kind,x)
 	local enemy={
 		kind=kind,
@@ -1074,7 +503,6 @@ function new_enemy(kind,x)
 		speed=1.25,
 		grabbing=false,
 		dead=false,
-		facing=right,
 		throwing=0,
 		attack_height=up,
 		cooldown=0,
@@ -1089,9 +517,6 @@ function new_enemy(kind,x)
 		boss=false,
 		active=false,
 		multiplier=1,
-		attacking=0,
-		rotation=0,
-		bouncing=0,
 	}
 	if kind==knife_guy then
 		enemy.health=2
@@ -1100,6 +525,12 @@ function new_enemy(kind,x)
 		enemy.boss=true
 		enemy.health=10
 		enemy.value=1000
+		enemy.hitbox={
+			x=0,
+			y=0,
+			width=4,
+			height=4,
+		}
 	elseif kind==snake then
 		enemy.value=200
 		enemy.tile_height=1
@@ -1115,10 +546,6 @@ function new_enemy(kind,x)
 	end
 	add(enemies,enemy)
 end
-
--- -------
--- updates
--- -------
 
 -- update all enemy movements
 function update_enemies()
@@ -1149,12 +576,12 @@ function update_enemy(enemy)
 	end
 	-- face player (usually)
 	if enemy.locked_direction then
-		enemy.facing=enemy.locked_direction
+		enemy.direction=enemy.locked_direction
 	else
 		if enemy.x<player.x then
-			enemy.facing=right
+			enemy.direction=right
 		else
-			enemy.facing=left
+			enemy.direction=left
 		end
 	end
 	-- should enemy run away?
@@ -1184,7 +611,7 @@ function update_enemy(enemy)
 			enemy.scored=true	
 		end
 		-- animated death movement
-		if enemy.facing==right then
+		if enemy.direction==right then
 			enemy.x-=gravity/2
 			enemy.y+=gravity
 		else
@@ -1195,11 +622,9 @@ function update_enemy(enemy)
 	elseif enemy.running then
 		if enemy.x<player.x then
 			enemy.direction=left
-			enemy.facing=left
 			enemy.x-=enemy.speed
 		else
 			enemy.direction=right
-			enemy.facing=right
 			enemy.x+=enemy.speed
 		end
 	-- otherwise normal movement
@@ -1215,6 +640,7 @@ function update_enemy(enemy)
 		end
 	end
 	-- enemy ran into strike
+	--[[
 	if collision(player.hitbox,enemy.body) and 
 			(player.punching==9 or player.kicking==9) then
 		new_effect(enemy_hit_effect,player.hitbox.x,player.hitbox.y)	
@@ -1228,8 +654,9 @@ function update_enemy(enemy)
 		sfx(-1)
 		sfx(10)
 	end
+	]]
 	-- sprite flip
-	if enemy.facing==left then
+	if enemy.direction==left then
 		enemy.flip_x=true
 	else
 		enemy.flip_x=false
@@ -1256,11 +683,13 @@ function update_grab_guy(enemy)
 			enemy.x-=enemy.speed
 		end
 		-- if touching then grab
+		--[[
 		if collision(enemy.body,player.body) then
 			player.grabbed=3
 			player.jump_dir=0
 			enemy.grabbing=true
 		end
+		]]
 	end
 end
 
@@ -1325,7 +754,7 @@ end
 function update_stick_guy(enemy)
 	local target=player.x-8
 	local window=2
-	enemy.facing=enemy.direction
+	update_body(enemy)
 	enemy.sprite=160
 	if enemy.active then
 		if enemy.dead then
@@ -1336,7 +765,7 @@ function update_stick_guy(enemy)
 			else
 				enemy.sprite=166
 			end
-			if enemy.attack_height==low then
+			if enemy.position==down then
 				enemy.sprite+=4
 			end
 			enemy.swinging-=1
@@ -1356,9 +785,14 @@ function update_stick_guy(enemy)
 					enemy.chain=0
 					enemy.cooldown=15
 				else
-					enemy.attack_height=flr(rnd(2))
+					local n=flr(rnd(2))
+					if n==0 then 
+						n=-1
+					end
+					enemy.position=n
 					enemy.chain+=1
 					enemy.swinging=10
+					update_hitbox(enemy)
 				end
 			end
 		end
@@ -1369,6 +803,7 @@ function update_stick_guy(enemy)
 	end
 end
 
+-- update snake
 function update_snake(enemy)
 	enemy.y=baseline+8
 	if enemy.active then
@@ -1377,10 +812,6 @@ function update_snake(enemy)
 		player.y+=1
 	end
 end
-
--- -------
--- drawing
--- -------
 
 -- draw all enemies to screen
 function draw_enemies()
@@ -1391,7 +822,7 @@ end
 
 -- draw one enemy to screen
 function draw_enemy(enemy)
-	if show_bodies then
+	if test_mode and show_bodies then
 		rectfill(
 			enemy.body.x,
 			enemy.body.y,
@@ -1399,6 +830,17 @@ function draw_enemy(enemy)
 			enemy.body.y+enemy.body.height,
 			10
 		)
+	end
+	if show_hitboxes then
+		if enemy.hitbox then
+			rectfill(
+				enemy.hitbox.x,
+				enemy.hitbox.y,
+				enemy.hitbox.x+enemy.hitbox.width,
+				enemy.hitbox.y+enemy.hitbox.height,
+				10
+			)
+		end
 	end
 	spr(
 			enemy.sprite,
@@ -1410,13 +852,635 @@ function draw_enemy(enemy)
 	)
 	if enemy.kind==stick_guy then
 		if enemy.swinging>0 and enemy.swinging<5 and enemy.dead==false then
-			if enemy.attack_height==high then
+			if enemy.position==up then
 				line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
 			else
 				line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
 			end
 		end
 	end
+end
+
+-- ----------------------------
+-- player
+-- ----------------------------
+
+function init_player()
+
+	player=new_entity()
+	player.grabbed=0
+	player.jumping=0
+	player.kicking=0
+	player.punching=0
+	player.score=0
+	update_body(player)
+	update_hitbox(player)
+	if current_level%2==1 then
+		player.x=max_x-16
+		player.direction=left
+	end
+end
+
+-- get game input
+function player_input()
+	if btn(⬅️) and player.jumping==0 then
+		player.direction=left
+	elseif btn(➡️) and player.jumping==0 then
+		player.direction=right
+	end
+	if btn(⬇️) then
+		player.position=down
+	elseif player.punching==0 and player.kicking==0 then
+		player.position=up
+	end
+	if btn(⬆️) and player.grabbed==0 then
+		if player.btnup_down==false then
+			if player.y==baseline then
+				player.jumping=jump_max
+			end
+			player.jump_dir=0
+			if btn(⬅️) then
+				player.jump_dir=left
+			elseif btn(➡️) then
+				player.jump_dir=right
+			end
+		end
+		player.btnup_down=true
+	else
+		player.btnup_down=false
+	end
+	if btn(4) and player.grabbed<1 then
+		if player.btn4_down==false then
+			player.kicking=strike_duration
+			sfx(9)
+		end
+		player.btn4_down=true
+	else
+		player.btn4_down=false
+	end
+	if btn(5) and player.grabbed<1 then
+		if player.btn5_down==false then
+			player.punching=strike_duration
+			sfx(9)
+		end
+		player.btn5_down=true
+	else
+		player.btn5_down=false
+	end
+	if btn(⬅️) and 
+			player.jumping<1 and
+			player.kicking<1 and 
+			player.punching<1 and 
+			player.grabbed<1 and 
+			player.position==up then
+		player.x-=player.speed
+		player.walking=true
+	elseif btn(➡️) and 
+			player.jumping<1 and
+			player.kicking<1 and 
+			player.punching<1 and 
+			player.grabbed<1 and
+			player.position==up then
+		player.x+=player.speed
+		player.walking=true
+	else
+		player.walking=false
+		player.w_index=0
+	end
+end
+
+function update_player()
+
+	player_input()
+	if ticks%4==0 then
+		player.w_index+=1
+		if player.w_index>1 then
+			player.w_index=0
+		end
+	end	
+	
+	-- start mode
+	if game_mode==mode_start then
+		player.walking=true
+		player.x+=player.speed*player.direction
+	
+	-- play mode
+	elseif game_mode==mode_play then
+		-- shake off grabbers
+		if player.last_direction~=player.direction then
+			player.grabbed-=1
+			if player.grabbed<0 then
+				player.grabbed=0
+			end		
+		end
+		-- lose health if grabbed
+		if player.grabbed>1 then
+				player.health-=0.5
+		else
+			-- else drop all grabbers
+			for enemy in all(enemies) do
+				if enemy.grabbing==true then
+					enemy.shook=true
+				end
+			end
+		end
+		-- apply gravity/momentum
+		if player.jumping>0 then
+			player.x+=player.jump_dir*player.speed
+		end
+		if player.jumping>jump_max/2 then
+			player.y-=gravity
+		else
+			player.y+=gravity
+			if player.y>baseline then
+				player.y=baseline
+			end
+		end
+		player.kicking-=1
+		if player.kicking<0 then
+			player.kicking=0
+		end
+		player.punching-=1
+		if player.punching<0 then
+			player.punching=0
+		end
+		player.jumping-=1
+		if player.jumping<0 then
+			player.jumping=0
+		end
+		update_body(player)
+		-- update the hitbox
+		update_hitbox(player)
+		-- if player is hurt
+		if player.hurt>0 then
+			player.hurt-=1
+		end
+		-- if no health left then die
+		if player.health<=0 then
+			if test_mode==false then
+				change_mode(mode_death)
+			end
+		end
+		-- if we're at end of level
+		if (current_level%2==1 and player.x<=min_x) or
+				(current_level%2==0 and player.x+15>=max_x) then
+			change_mode(mode_complete)
+		end
+		player.last_direction=player.direction
+		
+	elseif game_mode==mode_death then
+		if player.direction==left then
+			player.x+=gravity/2
+		else
+			player.x-=gravity/2
+		end
+		player.y+=gravity
+		if player.y>camera_y+128 then
+			change_mode(mode_start)
+		end				
+	elseif game_mode==mode_complete then
+		-- *** move this
+		if player.w_index==0 then
+			player.sprite=2
+		else
+			player.sprite=6
+		end
+	end
+	
+end
+
+function draw_player()
+
+	if test_mode and show_bodies then
+		rectfill(
+			player.body.x,
+			player.body.y,
+			player.body.x+player.body.width-1,
+			player.body.y+player.body.height-1,
+			10
+		)
+	end
+
+	-- default sprite
+	player.sprite=0
+
+	-- dead sprite
+	if game_mode==mode_death then
+		player.sprite=46
+
+	-- player hurt sprite
+	elseif player.hurt>0 then
+		player.sprite=36
+
+	-- jumping
+	elseif player.jumping>0 then
+		-- default jump sprite
+		player.sprite=2
+		-- if kicking
+		if player.kicking>0 then
+			player.sprite=44
+			-- if climax of kick
+			if is_climax(player.kicking) then
+				player.sprite=38
+			end
+		-- if punching
+		elseif player.punching>0 then
+			player.sprite=44
+			-- if climax of punch
+			if is_climax(player.punching) then
+				player.sprite=40
+			end
+		end
+						
+	-- ducking
+	elseif player.position==down then
+		-- default ducking sprite
+		player.sprite=14
+		-- if kicking
+		if player.kicking>0 then
+			player.sprite=32
+			-- if climax of kick
+			if is_climax(player.kicking) then
+   	player.sprite=42
+   end
+  -- if punching
+  elseif player.punching>0 then
+  	player.sprite=32
+  	-- if climax of punch
+  	if is_climax(player.punching) then
+  		player.sprite=34
+  	end
+  end
+  
+	-- walking
+	elseif player.walking==true then
+		if player.w_index==3 then
+			player.sprite=2
+		else
+			player.sprite=player.w_index*2
+		end
+		
+	-- in normal state
+	else
+		-- if kicking
+		if player.kicking>0 then
+			player.sprite=10
+			-- if climax of kick
+			if is_climax(player.kicking) then
+				player.sprite=8
+			end
+		-- if punching
+		elseif player.punching>0 then
+			player.sprite=10
+			-- if climax of punch
+			if is_climax(player.punching) then
+				player.sprite=12
+			end
+		end
+	
+	end
+				
+	-- flip if looking left
+	player.flip_x=false
+	if player.direction==left then
+		player.flip_x=true
+	end
+	
+	-- debug - show bodies/hitbox
+	if test_mode and show_hitboxes then
+		rectfill(
+			player.hitbox.x,
+			player.hitbox.y,
+			player.hitbox.x+player.hitbox.width-1,
+			player.hitbox.y+player.hitbox.height-1,
+			10
+		)
+	end
+	
+	-- draw the sprite
+	spr(player.sprite,player.x,player.y,2,2,player.flip_x)
+
+end
+
+-- ----------------------------
+-- projectiles
+-- ----------------------------
+
+function init_projectiles()
+	knife=0
+	projectiles={}
+end
+
+function draw_projectiles()
+	for projectile in all(projectiles) do
+		spr(98,projectile.x,projectile.y,1,1,projectile.flip_x)
+	end
+end
+
+function new_projectile(kind,x,y,xspeed,yspeed)
+	projectile={
+		kind=kind,
+		x=x,
+		y=y,
+		xspeed=xspeed,
+		yspeed=yspeed,
+		body={
+			x=x,
+			y=y,
+			width=4,
+			height=4
+		},
+		tile_width=1,
+		tile_height=1,
+		direction=right,
+	}
+	if xspeed<0 then
+		projectile.direction=left
+	end
+	add(projectiles,projectile)
+end
+
+function update_projectiles()
+	for projectile in all(projectiles) do
+		projectile.x+=projectile.xspeed
+		projectile.y+=projectile.yspeed
+		if kind==0 then
+			projectile.sprite=98
+		end
+		projectile.flip_x=false
+		if projectile.direction==left then
+			projectile.flip_x=true
+		end
+		projectile.body.x=projectile.x
+		projectile.body.y=projectile.y
+		if collision(projectile.body,player.body) then
+			player.hurt=5
+			player.health-=10
+			del(projectiles,projectile)
+		elseif	is_offscreen(projectile) then
+			del(projectiles,projectile)
+		end
+	end	
+end
+
+-- ------
+-- scores
+-- ------
+
+function init_scores()
+	scores={}
+end
+
+function draw_scores()
+ for score in all(scores) do
+ 	print(score.n,score.x+1,score.y+1,0)
+		print(score.n,score.x,score.y,7)
+ end
+end
+
+function new_score(x,y,n)
+	local score={
+		x=x,
+		y=y,
+		n=n,
+		count=10
+	}
+	add(scores,score)
+end
+
+function update_scores()
+	for score in all(scores) do
+		score.count-=1
+		if score.count<1 then
+ 		del(scores,score)
+ 	end
+	end
+end
+
+-- ----------------------------
+-- game modes
+-- ----------------------------
+
+-- complete level program
+
+function mode_complete_init()
+	music(-1)
+	if current_level%2==1 then
+		complete_x=0
+		complete_direction=left
+	else
+		complete_x=max_x-128
+		complete_direction=right
+	end
+	complete_timer=0
+	player.walking=false
+end
+
+function mode_complete_update()
+	if complete_timer<=48 then
+		complete_x+=complete_direction
+	else
+		player.x+=complete_direction
+		player.y-=1
+		update_player()
+	end
+	if complete_timer>100 then
+		change_mode(mode_tally)
+	end
+	update_player()
+	update_camera(complete_x,camera_y)
+	complete_timer+=1
+end
+
+function mode_complete_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	draw_osd()
+end
+
+-- death program
+
+function mode_death_init()
+	music(-1)
+end
+
+function mode_death_update()
+	update_player()
+end
+
+function mode_death_draw()
+	cls(12)
+	draw_level()
+	draw_projectiles()
+	draw_player()
+	draw_enemies()
+	draw_scores()
+	draw_effects()
+	draw_osd()
+end
+
+-- intro program
+
+function mode_intro_init()
+	init_player()
+	intro_timer=160
+	update_camera()
+	music(5)
+end
+
+function mode_intro_update()
+	intro_timer-=1
+	update_player()
+	--update_player()
+	--update_camera()
+	if intro_timer<0 then
+		change_mode(mode_start)
+	end
+end
+
+function mode_intro_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	camera(camera_x,camera_y)
+	local xc=camera_x+64
+	center_print("level "..current_level,xc,50,7,true)
+	draw_osd()
+end
+
+-- menu program
+
+function mode_menu_update()
+	if btn(4) and btn(5) then
+		if skip_intro then
+			change_mode(mode_start)
+		else
+			change_mode(mode_intro)
+		end
+	end
+end
+
+function mode_menu_draw()
+	-- draw sprite of string rows
+	function str_spr(str,sx,sy)
+		local y=sy
+		for row in all(str) do
+			for i=1,#row do
+				local x=sx+i-1
+				local c=tonum(sub(row,i,i))
+				pset(x,y,c)
+			end
+			y+=1
+		end
+	end
+	-- save space on spritesheet
+	local title_spr={
+		'00990099009900990099999000099999000000000999999009900990',
+		'08990899089908990899999900999999000000008999999089908990',
+		'08999999089908990899889908998880000000008998880089908990',
+		'08999990089908990899089908990000000000008999999089908990',
+		'08999990089908990899089908990099000000008999999089908990',
+		'08998899089999990899089908999999000000008998880089999990',
+		'08990899089999900899089908999999000000008990000089999900',
+		'08800880088888000880088008888880000000008880000088888000',
+	}
+	cls(0)
+	local y=32
+	for i=0,112,16 do
+		spr(96,i,y)
+		spr(96,i,y+20)
+		spr(97,i+8,y)
+		spr(97,i+8,y+20)
+	end
+	--spr(70,64-7*8/2,y+10,7,1)
+	cursor(64-7*8/2,y+10)
+	color(7)
+	str_spr(title_spr,64-7*8/2,y+10)
+	
+	center_print("press 🅾️+❎ to start",64,y+40,7)
+	spr(78,5,68,2,2)
+	spr(78,106,68,2,2,true)
+end
+
+-- play (main) program
+
+function mode_play_init()
+	music(0)
+	if current_level==1 then
+		new_enemy(stick_guy,min_x)
+	end
+	init_effects()
+end
+
+
+function mode_play_update()
+	if test_mode then
+		test_input()
+	end
+	update_effects()
+	update_enemies()
+	update_player()
+	update_projectiles()
+	process_collisions()
+	update_scores()
+	update_camera()
+	level_timer-=0.5
+end
+
+function mode_play_draw()
+	cls(12)
+	draw_level()
+	draw_projectiles()
+	draw_player()
+	draw_enemies()
+	draw_effects()
+	draw_scores()
+	draw_osd()
+end
+
+-- start program
+
+function mode_start_init()
+	level_timer=2000
+	init_player()
+	init_enemies()
+	init_projectiles()
+	init_scores()
+	update_camera()
+	start_timer=56
+	sfx(8)
+end
+
+function mode_start_update()
+	update_player()
+	start_timer-=1
+	if start_timer<1 then
+		change_mode(mode_play)
+	end
+end
+
+function mode_start_draw()
+	cls(12)
+	draw_level()
+	draw_player()
+	update_camera()
+	local xc=camera_x+64
+	center_print("level "..current_level,xc,50,7,true)
+	draw_osd()
+end
+
+-- tally program
+
+function mode_tally_init()
+	current_level+=1
+	change_mode(mode_start)
+end
+
+function mode_tally_update()
+end
+
+function mode_tally_draw()
 end
 -->8
 --[[
@@ -1459,10 +1523,10 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000cccccccccccccc0000ccc
 ccccccccccccccccccccccccccccccccccccccc00ccccccccccccc0999cccccccccccccc0999ccccccccccccccccccccccccc0999ccccccccccccccccccccccc
 cccccccccccccccccccccccccccccccccccccc0095cccccccccccc0919cccccccccccccc0919ccccccccccccccccccccccccc0919ccccccccc0ccccccccccccc
 ccccccccccccccccccccccccc0000ccccccccc0999cccccccccccc9999ccccccccccccccc999ccccccccccccccccccccccccc9999cccccccc099ccccc99ccccc
-ccccccc0000ccccccccccccc0999cccccccccc799ccccccccccccc799cccccc0cccccccc07700999ccccccc0000cccccccccc799ccccccccc0999cccc99ccccc
-cccccc0999cccccccccccccc0919ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9cccccc0999cccccccccc70777cccccccc0099c0099cccccc
-cccccc0919ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700cccccccccc0919cccccccccc00797ccccccccc0777709ccccccc
-ccccccc999cc9ccccccccccc07700999cccc90077799ccccccccc0099887777ccccccccc7777ccccccccccc999cccccccccc009988cccccccc000777cccccccc
+ccccccc0000ccccccccccccc0999cccccccccc799ccccccccccccc799cccccc0cccccccc07700999cccccc0000ccccccccccc799ccccccccc0999cccc99ccccc
+cccccc0999cccccccccccccc0919ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9ccccc0999ccccccccccc70777cccccccc0099c0099cccccc
+cccccc0919ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700ccccccccc0919ccccccccccc00797ccccccccc0777709ccccccc
+ccccccc999cc9ccccccccccc07700999cccc90077799ccccccccc0099887777ccccccccc7777cccccccccc999ccccccccccc009988cccccccc000777cccccccc
 cccccc00779c9cccccccccc0770009c9ccc990888cc99cccccccc099887877ccccccccc8888cccccccccc00790cccccccccc0998877ccccccc00077877cccccc
 ccccc70009909cccccccccc07700ccccccc9cc7878c99ccccccccc9877779cccccccccc77777cccccccc0077770cccccccccc9877877cccccc007787777ccccc
 ccccc70999099ccccccccccc7777ccccccc99c777cccccccccccccc7777cc9cccccccc777777cccccccc0077770ccccccccccc777777cccccc990877767ccccc
@@ -1568,134 +1632,134 @@ cccc90000c000ccccccc90000c000ccccccccc890cccccccccccc890cccccccccccc8900cccccccc
 ccc89000ccc99cccccc89000ccc99cccccccccc89cccccccccccc89ccccccccccccc89cccccccccccccc990cccc00998ccccc89cccccccccccccccccc8c0899c
 ccc88cccccc888ccccc88cccccc888cccccccccc88ccccccccccc8cccccccccccccc8cccccccccccccc888ccccccc888ccccc8cccccccccccccccccccccc8888
 __label__
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888777777888eeeeee888eeeeee888eeeeee888eeeeee888eeeeee888eeeeee888888888888888888ff8ff8888228822888222822888888822888888228888
-8888778887788ee88eee88ee888ee88ee888ee88ee8e8ee88ee888ee88ee8eeee88888888888888888ff888ff888222222888222822888882282888888222888
-888777878778eeee8eee8eeeee8ee8eeeee8ee8eee8e8ee8eee8eeee8eee8eeee88888e88888888888ff888ff888282282888222888888228882888888288888
-888777878778eeee8eee8eee888ee8eeee88ee8eee888ee8eee888ee8eee888ee8888eee8888888888ff888ff888222222888888222888228882888822288888
-888777878778eeee8eee8eee8eeee8eeeee8ee8eeeee8ee8eeeee8ee8eee8e8ee88888e88888888888ff888ff888822228888228222888882282888222288888
-888777888778eee888ee8eee888ee8eee888ee8eeeee8ee8eee888ee8eee888ee888888888888888888ff8ff8888828828888228222888888822888222888888
-888777777778eeeeeeee8eeeeeeee8eeeeeeee8eeeeeeee8eeeeeeee8eeeeeeee888888888888888888888888888888888888888888888888888888888888888
-1111111d111d11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1111111d111d11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1111111d111d11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111dd11dd11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1eee11111666161116661616166616661111116616661666166616161666111116161666166617111ccc11111eee1e1e1eee1ee11111111111111111
-111111e11e1111111616161116161616161116161111161111611616116116161611111116161161116111711c1c111111e11e1e1e111e1e1111111111111111
-111111e11ee111111666161116617166166116611111166611611661116116611661111116661161116111171c1c111111e11eee1ee11e1e1111111111111111
-111111e11e1111111611161116117716161116161111111611611616116116161611111116161161116111711c1c111111e11e1e1e111e1e1111111111111111
-11111eee1e1111111611166616117771166616161171166111611616166616161666166616161666116117111ccc111111e11e1e1eee1e1e1111111111111111
-11111111111111111111111111117777111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1111111111bb1bbb1bbb11711c117711111116661611166616161666166611111616166616661666116616161111161611111ccc111116661611166616161666
-111111111b111b1b1b1b17111c11117111111616161116161616161116161111161611611161161616161616111116161111111c111116161611161616161611
-111111111bbb1bbb1bb117111ccc1ccc111116661611166616661661166111111666116111611661161611611111116117771ccc111116661611166616661661
-11111111111b1b111b1b17111c1c1c1c117116111611161611161611161611111616116111611616161616161111161611111c11117116111611161611161611
-111111111bb11b111b1b11711ccc1ccc171116111666161616661666161611711616166611611666166116161171161611111ccc171116111666161616661666
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1ee11ee11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111e111e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111ee11e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111e111e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1e1e1eee1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1eee1ee11ee111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1e111e1e1e1e11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1ee11e1e1e1e11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1e111e1e1e1e11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1eee1e1e1eee11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1eee1e1e1ee111ee1eee1eee11ee1ee1111116161666166116661666166611111666161116661616166616661171117111111111111111111111111111111111
-1e111e1e1e1e1e1111e111e11e1e1e1e111116161616161616161161161111111616161116161616161116161711111711111111111111111111111111111111
-1ee11e1e1e1e1e1111e111e11e1e1e1e111116161666161616661161166111111666161116661666166116611711111711111111111111111111111111111111
-1e111e1e1e1e1e1111e111e11e1e1e1e111116161611161616161161161111111611161116161116161116161711111711111111111111111111111111111111
-1e1111ee1e1e11ee11e11eee1ee11e1e111111661611166616161161166616661611166616161666166616161171117111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1eee11111666166611661616116617171c1c111111111ccc11111eee1e1e1eee1ee11111111111111111111111111111111111111111111111111111
-111111e11e1111111161116116111616161111171c1c177717771c1c111111e11e1e1e111e1e1111111111111111111111111111111111111111111111111111
-111111e11ee111111161116116111661166611711ccc111111111c1c111111e11eee1ee11e1e1111111111111111111111111111111111111111111111111111
-111111e11e111111116111611611161611161711111c177717771c1c111111e11e1e1e111e1e1111111111111111111111111111111111111111111111111111
-11111eee1e111111116116661166161616611717111c111111111ccc111111e11e1e1eee1e1e1111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1111111116661611166616161666166611111616111116661661166116661616111111111cc11111111111111111111111111111111111111111111111111111
-11111111161616111616161616111616111116161111116116161616161116161171177711c11111111111111111111111111111111111111111111111111111
-11111111166616111666166616611661111116161111116116161616166111611777111111c11111111111111111111111111111111111111111111111111111
-11111111161116111616111616111616111116661111116116161616161116161171177711c11111111111111111111111111111111111111111111111111111
-1111111116111666161616661666161611711666166616661616166616661616111111111ccc1111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111eee1eee11111666161116661616166616661111161611111666166116611666161617111cc111111eee1e1e1eee1ee1111111111111111111111111
-1111111111e11e11111116161611161616161611161611111616111111611616161616111616117111c1111111e11e1e1e111e1e111111111111111111111111
-1111111111e11ee1111116661611166616661661166111111616111111611616161616611161111711c1111111e11eee1ee11e1e111111111111111111111111
-1111111111e11e11111116111611161611161611161611111666111111611616161616111616117111c1111111e11e1e1e111e1e111111111111111111111111
-111111111eee1e1111111611166616161666166616161171166616661666161616661666161617111ccc111111e11e1e1eee1e1e111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-1111111111111666161116661616166616661111161611111666166116611666161611111ccc1111111111111111111111111111111111111111111111111111
-1111111111111616161116161616161116161111161611111161161616161611161617771c1c1111111111111111111111111111111111111111111111111111
-1111111111111666161116661666166116611111161611111161161616161661116111111c1c1111111111111111111111111111111111111111111111111111
-1111111111111611161116161116161116161111166611111161161616161611161617771c1c1111111111111111111111111111111111111111111111111111
-1111111111111611166616161666166616161171166616661666161616661666161611111ccc1111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111eee1ee11ee1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111e111e1e1e1e111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111ee11e1e1e1e111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111e111e1e1e1e111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111eee1e1e1eee111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1ee11ee11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111e111e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111ee11e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111e111e1e1e1e1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1e1e1eee1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111eee1eee111111661666166616661111166611661661166611111111166611661661166611111166166616661666166611111eee1e1e1eee1ee111111111
-111111e11e111111161116161666161111111666161616161611177717771666161616161611111116111161161616161161111111e11e1e1e111e1e11111111
-111111e11ee11111161116661616166111111616161616161661111111111616161616161661111116661161166616611161111111e11eee1ee11e1e11111111
-111111e11e111111161616161616161111111616161616161611177717771616161616161611111111161161161616161161111111e11e1e1e111e1e11111111
-11111eee1e111111166616161616166616661616166116661666111111111616166116661666166616611161161616161161111111e11e1e1eee1e1e11111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111666161116661616166616661111161616661611161616661661116611111ccc1ccc1c1c1ccc11111111111111111111111111111111111111111111
-1111111116161611161616161611161611111616161616111616116116161611177711c11c1c1c1c1c1111111111111111111111111111111111111111111111
-1111111116661611166616661661166111111616166616111661116116161611111111c11cc11c1c1cc111111111111111111111111111111111111111111111
-1111111116111611161611161611161611111666161616111616116116161616177711c11c1c1c1c1c1111111111111111111111111111111111111111111111
-1111111116111666161616661666161611711666161616661616166616161666111111c11c1c11cc1ccc11111111111111111111111111111111111111111111
-88888111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-88888111166616111666161616661666111116161111111116661611166616161666166611111166166616661666166117171666161116661616166616661111
-88888111161616111616161616111616111116161171177716161611161616161611161611111611161616111611161611711616161116161616161116161111
-88888111166616111666166616611661111111611777111116661611166616661661166111111666166616611661161617771666161116661666166116611111
-88888111161116111616111616111616111116161171177716111611161611161611161611111116161116111611161611711611161116161116161116161111
-88888111161116661616166616661616117116161111111116111666161616661666161611711661161116661666166617171611166616161666166616161171
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+8aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa8
+8a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a8
+8a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a8
+8a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a8
+8aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa8
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-82888222822882228888828882228222888282288222822882288888888888888888888888888888888882228288822282828882822282288222822288866688
-82888828828282888888828882888282882888288282882888288888888888888888888888888888888888828288828282828828828288288282888288888888
-82888828828282288888822282228222882888288282882888288888888888888888888888888888888888228222822282228828822288288222822288822288
-82888828828282888888828288828882882888288282882888288888888888888888888888888888888888828282888288828828828288288882828888888888
-82228222828282228888822282228882828882228222822282228888888888888888888888888888888882228222888288828288822282228882822288822288
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000990099009900990099999000099999000000000999999009900990000000000000000000000000000000000000
+00000000000000000000000000000000000008990899089908990899999900999999000000008999999089908990000000000000000000000000000000000000
+00000000000000000000000000000000000008999999089908990899889908998880000000008998880089908990000000000000000000000000000000000000
+00000000000000000000000000000000000008999990089908990899089908990000000000008999999089908990000000000000000000000000000000000000
+00000000000000000000000000000000000008999990089908990899089908990099000000008999999089908990000000000000000000000000000000000000
+00000000000000000000000000000000000008998899089999990899089908999999000000008998880089999990000000000000000000000000000000000000
+00000000000000000000000000000000000008990899089999900899089908999999000000008990000089999900000000000000000000000000000000000000
+00000000000000000000000000000000000008800880088888000880088008888880000000008880000088888000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
+8aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa88aaaaaa8
+8a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a88a8888a8
+8a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a88a8aaaa88aaaa8a8
+8a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a88a888888888888a8
+8aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa88aaaaaaaaaaaaaa8
+88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000aa3333038000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008303333aa00000000000
+00000000008338838330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000033838833800000000000
+00000000080833333070000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070333338080000000000
+00000000008083a0700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070a380800000000000
+00000000000083aa00000000777077707770077007700000077777000000077777000000777007700000077077707770777077700000000aa380000000000000
+000000000008083baa0000007070707070007000700000007700077007007707077000000700707000007000070070707070070000000aab3808000000000000
+00000000000000333ba00000777077007700777077700000770707707770777077700000070070700000777007007770770007000000ab333000000000000000
+000000000000008383ba000070007070700000700070000077000770070077070770000007007070000000700700707070700700000ab3838000000000000000
+000000000000000383ba000070007070777077007700000007777700000007777700000007007700000077000700707070700700000ab3830000000000000000
+00000000000800833bba000000000000000000000000000000000000000000000000000000000000000000000000000000000000000abb338008000000000000
+0000000008080003bba00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000abb30008080000000000
+00000000008a803bba0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000abb308a800000000000
+0000000088aa338ba000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ab833aa88000000000
+00000000008333ba00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ab333800000000000
+00000000000003a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a300000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101000000000000000000000000010101010000000000000000000000000101010100000000000000000000000001010100000000000000000000000000
