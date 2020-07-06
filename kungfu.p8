@@ -8,11 +8,11 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=true
-show_enemy_bodies=true
-show_enemy_hitboxes=true
-show_player_body=true
-show_player_hitbox=true
+test_mode=false
+show_enemy_bodies=false
+show_enemy_hitboxes=false
+show_player_body=false
+show_player_hitbox=false
 skip_intro=true
 logfile="kungfu"
 
@@ -35,11 +35,8 @@ strike_duration=15
 strike_contact=10
 strike_hold=4
 ticks=0
-grab_guy=0
-knife_guy=1
-stick_guy=2
-snake=3
-dragon=4
+fire_time=30
+
 enemy_group_counter=0
 enemy_counter=0
 enemy_group_counter=0
@@ -48,7 +45,7 @@ boss_threshold=64
 -- globals
 min_x=0
 max_x=level_size*8-1
-current_level=2
+current_level=1
 
 -- ----------------------------
 -- pico-8 main callbacks
@@ -85,7 +82,7 @@ function _update()
 	last_time=current_time
 end
 
-function _draw()	
+function _draw()
 	if game_mode=="menu" then
 		mode_menu_draw()
 	elseif game_mode=="intro" then
@@ -311,8 +308,7 @@ function process_collisions()
 	-- body collisions
 	for enemy in all(enemies) do
 		if collision(enemy.body,player.body) then
-			debug('collision')
-			if enemy.kind==grab_guy then
+			if enemy.kind=="grab_guy" then
 				if enemy.grabbing==false then
 					player.grabbed=3
 					player.jump_dir=0
@@ -327,13 +323,22 @@ function process_collisions()
 	-- enemy strikes
 	for enemy in all(enemies) do
 		if collision(enemy.hitbox,player.body) then
-			if enemy.kind==stick_guy then
+			if enemy.kind=="stick_guy" then
 				if	enemy.swinging==1 then
 					player.health-=enemy.power
 					player.hurt=hurt_time
-					new_effect(player_hit_effect,enemy.hitbox.x,enemy.hitbox.y)
+					new_effect("player_hit",enemy.hitbox.x,enemy.hitbox.y)
 				end
 			end
+		end
+	end
+	-- projectile collisions
+	for projectile in all(projectiles) do
+		if collision(projectile.body,player.body) then
+			player.hurt=hurt_time
+			player.health-=10
+			new_effect("player_hit",projectile.x,projectile.y)
+			del(projectiles,projectile)
 		end
 	end
 	-- player strikes
@@ -341,7 +346,7 @@ function process_collisions()
 		if collision(player.hitbox,enemy.body) then
 			if is_climax(player.punching) or
 					is_climax(player.kicking) then	
-				new_effect(enemy_hit_effect,player.hitbox.x,player.hitbox.y)
+				new_effect("enemy_hit",player.hitbox.x,player.hitbox.y)
 				player.strike_hit=3
 				enemy.health-=1
 				enemy.multiplier=1
@@ -358,17 +363,28 @@ end
 
 -- input for test mode
 function test_input()
+	local ens={
+		'grab_guy',
+		'knife_guy',
+		'stick_guy',
+		'snake',
+		'dragon',
+		'ball',
+		'mr.x',
+	}
 	local key=stat(31)
 	local num=tonum(key)
 	if game_mode=="play" then
 		if num then
+			local en=ens[num-1]
 			local x
-			if num==4 or num==5 then
+			x=random_enemy_x(0,false)
+			if en=="dragon" or
+				en=="snake" or
+				en=="ball" then
 				x=random_enemy_x(0,true)
-			else
-				x=random_enemy_x(0,false)
 			end
-			new_enemy(num-1,x)
+			new_enemy(en,x)
 			if enemies[#enemies].boss then
 				enemies[#enemies].active=true
 			end
@@ -443,9 +459,6 @@ end
 
 function init_effects()
 	effects={}
-	enemy_hit_effect=0
-	player_hit_effect=1
-	urn_break_effect=2
 end
 
 function new_effect(kind,x,y)
@@ -469,7 +482,7 @@ end
 
 function draw_effects()
 	for effect in all(effects) do
-		if effect.kind==enemy_hit_effect then
+		if effect.kind=="enemy_hit" then
 			print("✽",effect.x,effect.y,7)		
 		else
 			print("✽",effect.x,effect.y,8)
@@ -484,7 +497,7 @@ end
 function init_enemies()
 	enemies={}
 	if current_level==1 then
-		new_enemy(stick_guy,min_x)
+		new_enemy("stick_guy",min_x)
 	end
 end
 
@@ -493,28 +506,27 @@ function random_enemy_x(offset,close)
 	local left_x
 	local right_x
 	-- enemy starts offscreen
-	if close==nil then	
-		left_x=camera_x-16-offset
-		right_x=camera_x+127+15+offset
+	if close==nil or close==false then	
+		left_x=camera_x-8-offset
+		right_x=camera_x+127+7+offset
+		-- if too far right use left_x
+		if player.x<min_x+boss_threshold then
+			x=right_x
+		-- if too far left use right_x
+		elseif player.x>max_x-boss_threshold then
+			x=left_x
+		-- else pick a random one
+		else
+			local	r=flr(rnd(2))
+			if r==0 then
+				x=right_x
+			else
+				x=left_x
+			end
+		end
 	-- enemy starts onscreen
 	else
-		left_x=player.x-offset
-		right_x=player.x+15+offset
-	end
-	-- if too far right use left_x
-	if player.x<min_x+boss_threshold then
-		x=right_x
-	-- if too far left use right_x
-	elseif player.x>max_x-boss_threshold then
-		x=left_x
-	-- else pick a random one
-	else
-		local	r=flr(rnd(2))
-		if r==0 then
-			x=right_x
-		else
-			x=left_x
-		end
+		x=flr(rnd(128))+camera_x
 	end
 	return x
 end
@@ -523,18 +535,38 @@ end
 function more_enemies()
 	if current_level==1 then
 		for i=0,2 do
-			local x=random_enemy_x(i*8)
+			local x=random_enemy_x(i*16)
 			if i==2 and enemy_group_counter>2 then
-				new_enemy(knife_guy,x)
+				local conflict=false
+				for enemy in all(enemies) do
+					if enemy.kind=="knife_guy" and
+							(enemy.x<player.x and x<player.x) or
+							(enemy.x>player.x and x>player.x) then
+						conflict=true
+						break
+					end
+				end
+				if conflict==false then
+					new_enemy("knife_guy",x)
+				end
 				enemy_group_counter=0
 			else
-				new_enemy(grab_guy,x)
+				new_enemy("grab_guy",x)
 				enemy_group_counter+=1				
 			end
 		end
 	elseif current_level==2 then
 		local x=random_enemy_x(0,true)
-		new_enemy(snake,x)
+		if enemy_group_counter==2 then
+			new_enemy("ball",x)
+			enemy_group_counter+=1
+		elseif enemy_group_counter==5 then
+			new_enemy("dragon",x)
+			enemy_group_counter=0
+		else
+			new_enemy("snake",x)
+			enemy_group_counter+=1
+		end
 	end
 end
 
@@ -554,16 +586,16 @@ function new_enemy(kind,x)
 	enemy.value=100
 	enemy.x=x
 	enemy.y=baseline
-	if kind==grab_guy then
+	if kind=="grab_guy" then
 		enemy.grabbing=false
 		enemy.shook=false
-	elseif kind==knife_guy then
+	elseif kind=="knife_guy" then
 		enemy.cooldown=0
 		enemy.health=2
 		enemy.throwing=0
 		enemy.value=200
 		enemy.walking=false
-	elseif kind==stick_guy then
+	elseif kind=="stick_guy" then
 		enemy.boss=true
 		enemy.chain=0
 		enemy.cooldown=0
@@ -571,20 +603,25 @@ function new_enemy(kind,x)
 		enemy.power=20
 		enemy.swinging=0
 		enemy.value=1000
-	elseif kind==snake then
+	elseif kind=="snake" then
 		enemy.breaking=0
 		enemy.value=200
 		enemy.speed=2
 		enemy.tile_height=1
 		enemy.tile_width=1
 		enemy.y=camera_y-8
-	elseif kind==dragon then
+	elseif kind=="dragon" then
 		enemy.breaking=0
 		enemy.value=200
 		enemy.speed=2
 		enemy.tile_height=1
 		enemy.tile_width=1
 		enemy.y=camera_y-8
+		enemy.fire=0
+	elseif kind=="ball"then
+		enemy.y=camera_y-8
+		enemy.tile_height=1
+		enemy.tile_width=1
 	end
 	update_body(enemy)
 	update_hitbox(enemy)
@@ -639,7 +676,7 @@ function update_enemy(enemy)
 	end
 	-- should enemy run away?
 	if enemy.boss==false and
-			enemy.kind~=snake then
+			enemy.kind~="snake" then
 		if (current_level%2==1 and player.x<min_x+boss_threshold) or
 				(current_level%2==0 and player.x>max_x-boss_threshold)	then
 			enemy.running=true
@@ -676,16 +713,18 @@ function update_enemy(enemy)
 		end
 	-- otherwise normal movement
 	else
-		if enemy.kind==grab_guy then
+		if enemy.kind=="grab_guy" then
 			update_grab_guy(enemy)
-		elseif enemy.kind==knife_guy then
+		elseif enemy.kind=="knife_guy" then
 			update_knife_guy(enemy)			
-		elseif enemy.kind==stick_guy then
+		elseif enemy.kind=="stick_guy" then
 			update_stick_guy(enemy)
-		elseif enemy.kind==snake then
+		elseif enemy.kind=="snake" then
 			update_snake(enemy)
-		elseif enemy.kind==dragon then
+		elseif enemy.kind=="dragon" then
 			update_dragon(enemy)
+		elseif enemy.kind=="ball" then
+			update_ball(enemy)
 		end
 	end
 end
@@ -722,7 +761,7 @@ function update_knife_guy(enemy)
 			if enemy.attack_height==down then
 				y+=10
 			end
-			new_projectile(knife,enemy.x,y,2*enemy.direction,0)
+			new_projectile("knife",enemy.x,y,2*enemy.direction,0)
 		end
 		-- change attack height
 		if enemy.throwing==1 then
@@ -834,11 +873,56 @@ end
 
 -- update dragon movements
 function update_dragon(enemy)
-	if enemy.active==false then
+	if enemy.active==false and
+			enemy.breaking==0 then
 		enemy.y+=gravity
 		if enemy.y>baseline then
-			enemy.y=baseline			
+			enemy.y=baseline
+			enemy.breaking=5
 		end
+	elseif enemy.breaking>0 then
+		if ticks%3==0 then
+			enemy.breaking-=1		
+			if enemy.breaking<1 then
+				enemy.active=true
+				enemy.breaking=0
+				enemy.fire=fire_time
+			end
+		end
+	elseif enemy.fire>0 then
+		enemy.fire-=1
+		if enemy.fire<1 then
+			enemy.fire=0
+		end
+	else
+		del(enemies,enemy)
+	end
+end
+
+-- update ball
+function update_ball(enemy)
+	if enemy.active==false then
+		enemy.y+=gravity
+		if enemy.y>camera_y+48 then
+			enemy.y=camera_y+48
+			enemy.active=true
+			enemy.start_x=enemy.x
+			enemy.start_y=enemy.y
+			enemy.timer=60
+		end
+	elseif enemy.timer==0 then
+		del(enemies,enemy)
+	else
+		if enemy.w_index==0 then
+			local x=flr(rnd(2))-1
+			local y=flr(rnd(2))-1
+			enemy.x+=x
+			enemy.y+=y
+		else
+			enemy.x=enemy.start_x
+			enemy.y=enemy.start_y
+		end
+		enemy.timer-=1
 	end
 end
 
@@ -885,7 +969,7 @@ function draw_enemy(enemy)
 	end
 	
 	-- grab guy sprites
-	if enemy.kind==grab_guy then
+	if enemy.kind=="grab_guy" then
 		enemy.sprite=100+enemy.w_index*2
 		if enemy.grabbing then
 			enemy.sprite=104
@@ -894,7 +978,7 @@ function draw_enemy(enemy)
 		end
 
 	--knife guy sprites
-	elseif enemy.kind==knife_guy then
+	elseif enemy.kind=="knife_guy" then
 		enemy.sprite=128
 		if enemy.dead==true then
 			enemy.sprite=140
@@ -912,7 +996,7 @@ function draw_enemy(enemy)
 			enemy.sprite+=enemy.w_index*2
 		end	
 
-	elseif enemy.kind==snake then
+	elseif enemy.kind=="snake" then
 		enemy.sprite=110
 		if enemy.breaking>0 then
 			enemy.sprite=111
@@ -920,19 +1004,28 @@ function draw_enemy(enemy)
 			enemy.sprite=126+enemy.w_index
 		end
 		
-	elseif enemy.kind==dragon then
+	elseif enemy.kind=="dragon" then
 		if enemy.active then
 			enemy.sprite=78
 		else
-			if enemy.breaking<8 then
-				enemy.sprite=89
-			elseif enemy.breaking<5 then
-				enemy.sprite=74
-			elseif enemy.breaking<3 then
-				enemy.sprite=75
-			end
 			enemy.sprite=88
+			if enemy.breaking==5 then
+				enemy.sprite=89
+			elseif enemy.breaking==4 then
+				enemy.sprite=74
+				enemy.tile_height=2
+			elseif enemy.breaking==3 then
+				enemy.sprite=75
+			elseif enemy.breaking==2 then
+				enemy.sprite=76
+				enemy.tile_width=2
+			elseif enemy.breaking==1 then
+				enemy.sprite=78
+			end
 		end
+		
+	elseif enemy.kind=="ball" then
+		enemy.sprite=124
 
 	end
 
@@ -945,22 +1038,33 @@ function draw_enemy(enemy)
 
 	-- draw the sprite
 	spr(
-			enemy.sprite,
-			enemy.x,
-			enemy.y,
-			enemy.tile_width,
-			enemy.tile_height,
-			enemy.flip_x
+		enemy.sprite,
+		enemy.x,
+		enemy.y,
+		enemy.tile_width,
+		enemy.tile_height,
+		enemy.flip_x
 	)
 
 	-- some guys need more stuff
-	if enemy.kind==stick_guy then
+	if enemy.kind=="stick_guy" then
 		if enemy.swinging>0 and enemy.swinging<5 and enemy.dead==false then
 			if enemy.position==up then
 				line(enemy.x+15,enemy.y+2,enemy.x+19,enemy.y-2,0)
 			else
 				line(enemy.x+15,enemy.y+9,enemy.x+20,enemy.y+9,0)				
 			end
+		end
+
+	elseif enemy.kind=="dragon" then
+		if enemy.fire>0 then
+			local x
+			if enemy.x<player.x then
+				x=enemy.x+16
+			else
+				x=enemy.x-16
+			end
+			spr(108,x,enemy.y,2,1,enemy.flip_x)
 		end
 	end
 
@@ -971,17 +1075,24 @@ end
 -- ----------------------------
 
 function init_player()
-	player=new_entity()
+	if player==nil then
+		player=new_entity()
+		player.score=0
+	end
+	player.health=100
+	player.y=baseline
 	player.grabbed=0
 	player.jumping=0
 	player.kicking=0
 	player.punching=0
-	player.score=0
 	update_body(player)
 	update_hitbox(player)
 	if current_level%2==1 then
 		player.x=max_x-16
 		player.direction=left
+	else
+		player.x=0
+		player.direction=right
 	end
 end
 
@@ -1089,6 +1200,16 @@ function update_player()
 		end
 		-- *** bug:
 		--		- sometimes stuck in grab
+		local grabbers=0
+		for enemy in all(enemies) do
+			if enemy.grabbing==true then
+				grabbers+=1
+				break
+			end
+		end
+		if grabbers==0 then
+			player.grabbed=0
+		end
 		-- apply gravity/momentum
 		if player.jumping>0 then
 			player.x+=player.jump_dir*player.speed
@@ -1154,7 +1275,7 @@ function update_player()
 		else
 			player.walking=false
 			player.stepping=true
-			if player.w_index==0 then
+			if player.w_index==1 then
 				player.x+=complete_direction*2
 				player.y-=2
 			end
@@ -1291,7 +1412,6 @@ end
 -- ----------------------------
 
 function init_projectiles()
-	knife=0
 	projectiles={}
 end
 
@@ -1337,11 +1457,7 @@ function update_projectiles()
 		end
 		projectile.body.x=projectile.x
 		projectile.body.y=projectile.y
-		if collision(projectile.body,player.body) then
-			player.hurt=hurt_time
-			player.health-=10
-			del(projectiles,projectile)
-		elseif	is_offscreen(projectile) then
+		if	is_offscreen(projectile) then
 			del(projectiles,projectile)
 		end
 	end	
@@ -1590,13 +1706,12 @@ end
 -- tally program
 
 function mode_tally_init()
-	tally_timer=0
 end
 
 function mode_tally_update()
-	player.score-=1
-	tally_timer+=1
-	if tally_timer>200 then
+	level_timer-=10
+	player.score+=10
+	if level_timer<1 then
 		current_level+=1
 		change_mode("start")
 	end
@@ -1605,28 +1720,6 @@ end
 function mode_tally_draw()
 	draw_osd()
 end
--->8
-
-
---[[
-
-todo:
-	- knife collision effect
-	- tally mode
-	- snakes
-	- dragons
-	- mr. x
-	- sometimes player is stuck
-			in grab
-	- stair animation
-		
-maybe:
-		- boss for level 2?
-		- parallax background?
-		- bees?
-
-]]
-
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
@@ -1662,20 +1755,20 @@ ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccc
 ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000cccc0cccccccccccccccccccccc0000c
 ccccccccbbbbbb368888888888888888ffffffffffffffffffffffffffffffffccccccccccccccccccccccccccc77ccccccc7aa3333c38cccccccaa3333c38cc
 ccccccccbbbbb36baaa8aaaa8a8aaaaa4f444444444444444f44444444444444cccccccccccccccccccccccccc7777ccccc79833883833ccccccc833883833cc
-ccccccccbbbb36bbccc8a88a8a8a88a84f888888888888884fccccccccccccccccccccccccccccccccccccccc7d77d7ccccc8c833333c7cccccc8c833333c7cc
-ccccccccbbb36bbbccc8a8888a8888a84f878777787778784fccccccccccccccccccccccccccccccccccccccc777777cccccc7c83ac7ccccccccc8c83ac7cccc
-ccccccccbb36bbbbccc8aaaa8a8aaaa84f878888888888784fcccccccccccccccccccccccccccccccccccccccc7777ccccccccc73aac7cc7ccccccc83aaccccc
-ccccccccb36bbbbbccc888888a8888884f878787777878784fccccccccccccccccccccccccccccccc7d77d7cc7d77d7ccccccc8c83b797cccccccc8c83baaccc
-cccccccc33333333cccccccc8a8ccccc4f888788888878884fcccccccccccccccccccccccccccccc7777777777777777cccc7cccc3337accccccccccc333bacc
-cccccccc00000000cccccccc8a8ccccc4f878787777878784fcccccccccccccccccccccccccccccc7777777777777777ccc797ccc8383bacccccccccc8383bac
-ffffffff7ccccccccccccccc8a8ccccc4f878787777878784fccccccccccccccccffffccccccccccd777777dd777777dcccc7ccc7c373baccccccccccc383bac
-4444444467cccccccccccccc8a8ccccc4f878787777878784fcccccccccccccccbffff8ccccccccccdd77ddccdd77ddccccccc8cc833bbaccccccc8cc833bbac
-ffffffffc67cccccaaaaaaaaaaaaaaaa4f878787777878784fccccccccccccccfbbff88fcc7777cccc7777cccc7777cccccc8c8ccc3bbacccccc8c8ccc3bbacc
-ffffffff44ffffff88888888888888884f888788888878884fccccccccccccccffbb88ffc777777cc777777cc777777cccccc8a8c3bb7cccccccc8a8c3bbaccc
-44444444ccc555ccaaaaaaaaaaaaaaaa4f878787777878784fccccccccccccccfff88fff777777777777777777777777ccc87aa338b797ccccc88aa338bacccc
-ffffffffcccc67cccccccccccccccccc4f878888888888784fccccccccccccccff88bbff77d77d7777d77d7777d77d77ccccc8333bac7cccccccc8333baccccc
-ffffffffccccc67ccccccccccccccccc4f878777787778784fccccccccccccccc88ffbbcc77dd77cc77dd77cc77dd77ccccccc7c79997c7ccccccccc3acccccc
-ffffffffcccccc67cccccccccccccccc4f888888888888884fccccccccccccccccffffcccc7777cccc7777cccc7777ccccccccccc777cccccccccccccccccccc
+ccccccccbbbb36bbccc8a88a8a8a88a84fcccccccccccccc4fccccccccccccccccccccccccccccccccccccccc7d77d7ccccc8c833333c7cccccc8c833333c7cc
+ccccccccbbb36bbbccc8a8888a8888a84fc888888888888c4fccccccccccccccccccccccccccccccccccccccc777777cccccc7c83ac7ccccccccc8c83ac7cccc
+ccccccccbb36bbbbccc8aaaa8a8aaaa84fc878777777878c4fcccccccccccccccccccccccccccccccccccccccc7777ccccccccc73aac7cc7ccccccc83aaccccc
+ccccccccb36bbbbbccc888888a8888884fc878888888878c4fccccccccccccccccccccccccccccccc7d77d7cc7d77d7ccccccc8c83b797cccccccc8c83baaccc
+cccccccc33333333cccccccc8a8ccccc4fc878787787878c4fcccccccccccccccccccccccccccccc7777777777777777cccc7cccc3337accccccccccc333bacc
+cccccccc00000000cccccccc8a8ccccc4fc878787787878c4fcccccccccccccccccccccccccccccc7777777777777777ccc797ccc8383bacccccccccc8383bac
+ffffffff7ccccccccccccccc8a8ccccc4fc888787787888c4fccccccccccccccccffffccccccccccd777777dd777777dcccc7ccc7c373baccccccccccc383bac
+4444444467cccccccccccccc8a8ccccc4fc878787787878c4fcccccccccccccccbffff8ccccccccccdd77ddccdd77ddccccccc8cc833bbaccccccc8cc833bbac
+ffffffffc67cccccaaaaaaaaaaaaaaaa4fc878787787878c4fccccccccccccccfbbff88fcc7777cccc7777cccc7777cccccc8c8ccc3bbacccccc8c8ccc3bbacc
+ffffffff44ffffff88888888888888884fc878787787878c4fccccccccccccccffbb88ffc777777cc777777cc777777cccccc8a8c3bb7cccccccc8a8c3bbaccc
+44444444ccc555ccaaaaaaaaaaaaaaaa4fc878888888878c4fccccccccccccccfff88fff777777777777777777777777ccc87aa338b797ccccc88aa338bacccc
+ffffffffcccc67cccccccccccccccccc4fc878777777878c4fccccccccccccccff88bbff77d77d7777d77d7777d77d77ccccc8333bac7cccccccc8333baccccc
+ffffffffccccc67ccccccccccccccccc4fc888888888888c4fccccccccccccccc88ffbbcc77dd77cc77dd77cc77dd77ccccccc7c79997c7ccccccccc3acccccc
+ffffffffcccccc67cccccccccccccccc4fcccccccccccccc4fccccccccccccccccffffcccc7777cccc7777cccc7777ccccccccccc777cccccccccccccccccccc
 4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccccc2222cccccccccccccccccccccccccc8cc8cc8c8cccccaaccccccccccc
 8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999cccccccccccc2999ccccccccccccccccccccccccc88aa8acaa8aaccca33acccccccccc
 8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc2929cccccccccccc2929cccccccccccc2929cccccccc4cccccccccccccc88aa7777a77a777ccbaabccccccc8cc
