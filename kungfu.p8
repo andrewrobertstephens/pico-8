@@ -8,17 +8,18 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=false
+test_mode=true
+no_enemies=false
 show_enemy_bodies=true
 show_enemy_hitboxes=false
-show_player_body=false
+show_player_body=true
 show_player_hitbox=true
 skip_cutscene=true
 logfile="kungfu"
 
 palt(0,false)
 palt(12,true)
-
+pal(1,8)
 -- constants
 left=-1
 right=1
@@ -29,11 +30,11 @@ boss_health=15
 enemy_strike_time=10
 gravity=2
 hurt_time=5
-jump_max=18
+jump_max=10
 level_size=80
-strike_duration=15
-strike_contact=10
-strike_hold=4
+strike_duration=10
+strike_contact=6
+strike_hold=2
 ticks=0
 fire_time=30
 cutscene_timer=0
@@ -103,12 +104,6 @@ function _draw()
 		mode_tally_draw()
 	elseif game_mode=="cutscene" then
 		mode_cutscene_draw()
-	end
-	if test_mode then
-		local x=camera_x
-		local y=camera_y
-		print('test mode',x,y,7)
-		draw_test_osd()
 	end
 end
 
@@ -247,46 +242,6 @@ function draw_osd()
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 end
 
--- draw test info osd
-function draw_test_osd()
-	function debug_print(label,var)
-		color(7)
-		if var~=nil then
-			local text=label..':'..var
-			print(text)
-		end		
-	end
-	local x=0
-	local y=0
-	if camera_x~=nil then
-		x=camera_x
-	end
-	if camera_y~=nil then
-		y=camera_y
-	end
-	cursor(x,y)
-	rectfill(x,y+90,x+127,y+127,0)
-	cursor(x,y+91)
-	debug_print('game_mode',game_mode)
-	debug_print('camera_x',camera_x)
-	debug_print('camera_y',camera_y)
-	debug_print('enemies',#enemies)
-	if player~=nil then
-		cursor(x+64,y+91)
-		debug_print('player.x',player.x)
-		debug_print('player.y',player.y)
-		if player.jumping>0 then
-			debug_print('jumping',player.jumping)
-		end
-		if player.punching>0 then
-			debug_print('punching',player.punching)
-		end
-		if player.kicking>0 then
-			debug_print('kicking',player.kicking)
-		end
-	end
-end
-
 -- is strike a climax
 function is_climax(strike)
 	return strike>strike_contact-strike_hold and
@@ -357,7 +312,7 @@ function process_collisions()
 			if is_climax(player.punching) or
 					is_climax(player.kicking) then	
 				new_effect(
-					"enemyhit",
+					"enemy_hit",
 					player.hitbox.x-2,
 					player.hitbox.y
 				)
@@ -390,7 +345,26 @@ function test_input()
 	local num=tonum(key)
 	if game_mode=="play" then
 		if num~=nil then
-
+			local en=ens[num]
+			if en=="grabguy" then
+				new_grabguy(random_enemy_x())
+			elseif en=="knifeguy" then
+				new_knifeguy(random_enemy_x())
+			elseif en=="stickguy" then
+				local x
+				if player.direction==left then
+					x=camera_x
+				else
+					x=camera_x+120
+				end
+				new_stickguy(x)
+			elseif en=="snake" then
+				new_snake(random_enemy_x(0,true))
+			elseif en=="ball" then
+				new_ball(random_enemy_x(0,true))
+			elseif en=="dragon" then
+				new_dragon(random_enemy_x(0,true))
+			end
 		end
 	end
 end
@@ -463,11 +437,14 @@ end
 -- ----------------------------
 
 function new_effect(kind,x,y)
+	if effects==nil then
+		effects={}
+	end
 	effect={
 		kind=kind,
 		x=x,
 		y=y,
-		countdown=3,
+		countdown=10,
 		done=false,
 	}
 	effect.update=function(self)
@@ -486,10 +463,6 @@ function new_effect(kind,x,y)
 		end
 	end
 	add(effects,effect)
-end
-
-function init_effects()
-	effects={}
 end
 
 function update_effects()
@@ -520,6 +493,9 @@ end
 function random_enemy_x(offset,close)
 	local left_x
 	local right_x
+	if offset==nil then
+		offset=0
+	end
 	-- enemy starts offscreen
 	if close==nil or close==false then
 		left_x=camera_x-8-offset
@@ -576,7 +552,8 @@ end
 
 -- update all enemy movements
 function update_enemies()
-	if test_mode==false then
+	if test_mode==false or
+			no_enemies==false then
 		if player.x>min_x+boss_threshold and
 				player.x<max_x-boss_threshold then
 			if ticks%100==0 then
@@ -623,37 +600,45 @@ function new_grabguy(x)
 		health=1,
 		speed=1.25,
 		direction=right,
+		scored=false
 	}
 	
-	grabguy.update=function(grabguy)
-		grabguy.body.x=grabguy.x+4
-		grabguy.body.y=grabguy.y
-		if grabguy.health<=0 then
-			grabguy.state="dead"
+	grabguy.update=function(self)
+		self.body.x=grabguy.x+4
+		self.body.y=grabguy.y
+		if self.health<=0 then
+			self.state="dead"
 		end
-		if grabguy.state=="walking" then	
+		if self.state=="walking" then	
 			if ticks%3==0 then
-				grabguy.anim+=1
-				if grabguy.anim>1 then
-					grabguy.anim=0
+				self.anim+=1
+				if self.anim>1 then
+					self.anim=0
 				end
 			end
-			if grabguy.x<player.x then
-				grabguy.direction=right
-				grabguy.x+=grabguy.speed
-			elseif grabguy.x>player.x then
-				grabguy.direction=left
-				grabguy.x-=grabguy.speed
+			if self.x<player.x then
+				self.direction=right
+				self.x+=self.speed
+			elseif self.x>player.x then
+				self.direction=left
+				self.x-=self.speed
 			end
-			if collision(grabguy.body,player.body) then
-				grabguy.state="grabbing"
-				player.grabbed=3
+			if collision(self.body,player.body) then
+				self.state="grabbing"
+				add(player.grabbers,self)
+				player.grabbed+=3
 			end
-		elseif grabguy.state=="dead" then
-			grabguy.x+=grabguy.direction*-1
-			grabguy.y+=gravity
-			if grabguy.y>camera_y+127 then
-				del(enemies,grabguy)
+		elseif self.state=="dead" or
+				self.state=="shook" then
+			self.x+=self.direction*-1
+			self.y+=gravity
+			if self.scored==false and
+					self.state=="dead" then
+				new_score(self.x,self.y,100)
+				self.scored=true
+			end
+			if self.y>camera_y+127 then
+				del(enemies,self)
 			end
 		end
 	end
@@ -665,7 +650,8 @@ function new_grabguy(x)
 			sprite=100+grabguy.anim*2
 		elseif grabguy.state=="grabbing" then
 			sprite=104
-		elseif grabguy.state=="dead" then
+		elseif grabguy.state=="dead" or
+				grabguy.state=="shook" then
 			sprite=106
 		end
 		if grabguy.x<player.x then
@@ -746,7 +732,7 @@ function new_knifeguy(x)
 				else
 					self.attack_height=down
 				end
-				new_projectile(self.x,y,self.direction)
+				new_knife(self.x,y,self.direction*2)
 			elseif self.throwing<1 then
 				self.state="cooldown"
 				self.cooldown=10
@@ -817,10 +803,25 @@ function new_stickguy(x)
 		health=boss_health,
 	}
 	
+	if stickguy.x<player.x then
+		stickguy.direction=right
+	else
+		stickguy.direction=left
+	end
+	
 	stickguy.update=function(self)
+		if self.health<=0 then
+			self.state="dead"
+		end
 		if self.state=="waiting" then
-			if player.x<min_x+boss_threshold then
-				self.state="walking"
+			if self.direction==right then
+				if player.x<self.x+boss_threshold then
+					self.state="walking"
+				end
+			else
+				if player.x>self.x-15-boss_threshold then
+					self.state="walking"
+				end
 			end
 		elseif self.state=="walking" then
 			if ticks%3==0 then
@@ -830,15 +831,22 @@ function new_stickguy(x)
 				end
 			end
 			if self.cooldown>0 then
-				self.x-=self.speed
+				self.x+=self.speed*self.direction*-1
 				self.cooldown-=1
 			else
-				local target=player.x-8
+				local target
 				local window=2
+				if self.x<player.x then
+					target=player.x-8
+				else
+					target=player.x+8
+				end
 				if self.x<target-window then
 					self.x+=self.speed
+					self.direction=right
 				elseif self.x>target+window then
 					self.x-=self.speed
+					self.direction=left
 				else
 					self.state="swinging"
 					self.swinging=enemy_strike_time
@@ -861,6 +869,12 @@ function new_stickguy(x)
 				self.cooldown=15
 				self.position=up
 				self.state="walking"
+			end
+		elseif self.state=="dead" then
+			self.x+=self.direction*-1
+			self.y+=gravity
+			if self.y>camera_y+127 then
+				del(enemies,self)
 			end
 		end
 		self.body.x=self.x+4
@@ -888,12 +902,27 @@ function new_stickguy(x)
 		elseif self.state=="dead" then
 			sprite=172
 		end
-		spr(sprite,self.x,self.y,2,2)
+		local flip_x
+		if self.direction==right then
+			flip_x=false
+		else
+			flip_x=true
+		end
+		spr(sprite,self.x,self.y,2,2,flip_x)
+
 		if self.swinging>0 and self.swinging<5 then
-			if self.position==up then
-				line(self.x+15,self.y+2,self.x+19,self.y-2,0)
+			if self.direction==right then
+				if self.position==up then
+					line(self.x+15,self.y+2,self.x+19,self.y-2,0)
+				else
+					line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
+				end
 			else
-				line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
+				if self.position==up then
+					line(self.x,self.y+2,self.x-4,self.y-2,0)             
+				else
+					line(self.x,self.y+9,self.x-7,self.y+9,0)				
+				end
 			end
 		end
 	end
@@ -904,119 +933,210 @@ end
 
 -- ball
 function new_ball(x)
-
-	local ball={}
-	ball.kind="ball"
-	ball.x=x
-	ball.y=0
-	ball.state="falling"
-	ball.countdown=50
-	ball.anim=0
-	ball.body={}
-	
-	ball.update=function(ball)
+	local ball={
+		kind="ball",
+		x=x,
+		y=0,
+		state="falling",
+		countdown=50,
+		anim=0,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=8,
+		},
+		health=1
+	}
+	ball.update=function(self)
+		if self.health<=0 then
+			new_effect("break",self.x,self.y)
+			del(enemies,self)
+		end
 		local dest_y=camera_y+48
 		if ticks%3==0 then
-			ball.anim+=1
-			if ball.anim>1 then
-				ball.anim=0
+			self.anim+=1
+			if self.anim>1 then
+				self.anim=0
 			end
 		end
-		if ball.state=="falling" then
-			ball.y+=gravity
-			if ball.y>dest_y then
-				ball.y=dest_y
-				ball.state="countdown"
-				ball.start_x=ball.x
-				ball.start_y=ball.y
+		if self.state=="falling" then
+			self.y+=gravity
+			if self.y>dest_y then
+				self.y=dest_y
+				self.state="countdown"
+				self.start_x=ball.x
+				self.start_y=ball.y
 			end
-		elseif ball.state=="countdown" then
-			if ball.anim==0 then
-				ball.x=ball.start_x
-				ball.y=ball.start_y
+		elseif self.state=="countdown" then
+			if self.anim==0 then
+				self.x=ball.start_x
+				self.y=ball.start_y
 			else
 				local x=flr(rnd(2))-1
 				local y=flr(rnd(2))-1
-				ball.x+=x
-				ball.y+=y
+				self.x+=x
+				self.y+=y
 			end
-			ball.countdown-=1
-			if ball.countdown<1 then
-				ball.state="exploding"
+			self.countdown-=1
+			if self.countdown<1 then
+				new_effect("break",self.x,self.y)
+				local shards={
+					{xs=-2,ys=-2},
+					{xs=2, ys=-2},
+					{xs=-2,ys=2},
+					{xs=2, ys=2}
+				}
+				for shard in all(shards) do
+					new_shard(self.x,self.y,shard.xs,shard.ys)
+				end
+				del(enemies,self)
 			end
 		end
-		ball.body.x=ball.x
-		ball.body.y=ball.y
-		ball.body.width=8
-		ball.body.height=8
+		self.body.x=ball.x
+		self.body.y=ball.y
 	end
-	
-	ball.draw=function(ball)
+	ball.draw=function(self)
 		sprite=124
-		spr(124,ball.x,ball.y,1,1)
+		spr(124,self.x,self.y,1,1)
 	end
-
 	add(enemies,ball)
-
 end
 
 -- dragon
 function new_dragon(x)
 
-	local dragon={}
-	dragon.kind="dragon"
-	dragon.x=x
-	dragon.y=camera_y-8
-	dragon.anim=0
-	dragon.state="falling"
-	dragon.body={}
+	local dragon={
+		kind="dragon",
+		x=x,
+		y=camera_y-8,
+		anim=0,
+		state="falling",
+		health=1,
+		idle_count=10,
+		breath_count=10,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=8
+		}
+	}
 
-	dragon.update=function(dragon)
+	dragon.update=function(self)
+		self.body.x=self.x
+		self.body.y=self.y
 		local bottom=baseline
-		if dragon.state=="falling" then
-			dragon.y+=gravity
-			if dragon.y>bottom then
-				dragon.y=bottom
-				dragon.state="appearing"
+		if self.state=="falling" then
+			self.body.y=self.y+8
+			self.y+=gravity
+			if self.y>bottom then
+				self.y=bottom
+				self.state="appearing"
 			end
-		elseif dragon.state=="appearing" then
-			if ticks%3 then
-				dragon.anim+=1
-				if dragon.anim>5 then
-					dragon.state="breathing"
+		elseif self.state=="appearing" then
+			if ticks%3==0 then
+				self.anim+=1
+				if self.anim>5 then
+					self.anim=5
+					self.state="idle"
 				end
 			end
-		end		
-		dragon.body.x=0
-		dragon.body.y=0
-		dragon.body.width=0
-		dragon.body.height=0
+		elseif self.state=="idle" then
+			if self.idle_count<1 then
+				self.state="breathing"
+				local x
+				local xs
+				if self.x<player.x then
+					x=self.x+13
+					xs=1
+				else
+					x=self.x-16
+					xs=-1
+				end
+				new_fire(x,self.y,xs)
+			end
+			self.idle_count-=1
+		elseif self.state=="breathing" then
+			if self.breath_count<1 then
+				self.state="disappearing"
+			end
+			self.breath_count-=1			
+		elseif self.state=="disappearing" then
+			debug(self.anim)
+			if ticks%3==0 then
+				self.anim-=1
+				if self.anim<1 then
+					del(enemies,self)
+				end
+			end
+		end
+		if self.anim<2 then
+			self.body.y=self.y+8
+		elseif self.anim>3 then
+			self.body.x=self.x-3
+			self.body.width=14
+		end
+		if self.health<=0 then
+			if self.state=="falling" or
+					self.state=="appearing" then
+				new_effect("break",self.x,self.y)
+				del(enemies,self)
+			elseif self.state=="idle" then
+				self.anim=5
+				self.state="disappearing"
+			end
+		end
 	end
 	
-	dragon.draw=function(dragon)
-		local sprite
-		local width
-		if dragon.state=="falling" then
+	dragon.draw=function(self)
+		local sprite=72
+		local tile_width=1
+		if self.state=="falling" then
 			sprite=72
-			width=1
-		elseif dragon.state=="appearing" then
-			sprite=73+dragon.anim
-			if dragon.anim>3 then
-				width=2
+		elseif self.state=="appearing" or
+				self.state=="disappearing" then
+			if self.anim==0 then
+				sprite=72
+				tile_width=1
+			elseif self.anim==1 then
+				sprite=73
+				tile_width=1
+			elseif self.anim==2 then
+				sprite=74
+				tile_width=1
+			elseif self.anim==3 then
+				sprite=75
+				tile_width=1
+			elseif self.anim==4 then
+				sprite=76
+				tile_width=2
 			else
-				width=1
+				sprite=78
+				tile_width=2
 			end
-		elseif dragon.state=="breathing" then
+		elseif self.state=="idle" then
 			sprite=78
-			width=2
+			tile_width=2
+		elseif self.state=="breathing" then
+			sprite=78
+			tile_width=2
 		end
 		local flip_x
-		if dragon.x<player.x then
+		if self.x<player.x then
 			flip_x=false
 		else
 			flip_x=true
 		end
-		spr(sprite,dragon.x,dragon.y,width,2,flip_x)
+		if test_mode and show_enemy_bodies then
+			draw_box(self.body,10)
+		end
+		local x=self.x
+		local y=self.y
+		if tile_width==2 then
+			x-=4
+		end
+		spr(sprite,x,y,tile_width,2,flip_x)
 		--[[
 		if enemy.fire>0 then
 			local x
@@ -1122,6 +1242,7 @@ function new_player()
 		score=0,
 		health=100,
 		y=baseline,
+		grabbers={},
 		grabbed=0,
 		jumping=0,
 		kicking=0,
@@ -1129,11 +1250,24 @@ function new_player()
 		hurt=0,
 		speed=1,
 		w_index=0,
+		state="normal",
+		old_input={
+			x=0,
+			y=0,
+			k=false,
+			p=false
+		},
 		body={
 			x=0,
 			y=0,
 			width=8,
 			height=16
+		},
+		hitbox={
+			x=0,
+			y=0,
+			width=4,
+			height=4
 		}
 	}
 
@@ -1161,6 +1295,17 @@ function new_player()
 			end
 		end
 	end
+	
+	player.update_cutscene=function(self)
+		self.state="normal"
+		self.walking=true
+		if ticks%3==0 then
+			self.w_index+=1
+			if self.w_index>1 then
+				self.w_index=0
+			end
+		end
+	end
 
 	player.update_death=function(self)
 		if self.direction==left then
@@ -1180,547 +1325,407 @@ function new_player()
 	end
 	
 	player.update=function(self)
+		
+		-- always apply gravity
+		self.y+=gravity
+		if self.y>baseline then
+			self.y=baseline
+		end
+		
+		-- always update body
 		self.body.x=self.x+4
-		self.body.y=self.y		
+		self.body.y=self.y
+		if self.position==down then
+			self.body.y=self.y+8
+		end
+		
+		-- always update hitbox
 		update_hitbox(self)
-		player_input()
-		if ticks%3==0 then
-			self.w_index+=1
-			if self.w_index>1 then
-				self.w_index=0
-			end
-		end	
-		if self.last_direction~=self.direction then
-			self.grabbed-=1
-			if self.grabbed<0 then
-				self.grabbed=0
-			end		
+		
+		-- update striking
+	
+		if self.kicking>0 then
+			self.kicking-=1
 		end
-		-- lose health if grabbed
-		if self.grabbed>0 then
-				self.health-=0.5
-		else
-			-- else drop all grabbers
-			for enemy in all(enemies) do
-				if enemy.grabbing==true then
-					enemy.shook=true
-				end
-			end
+
+		if self.punching>0 then
+			self.punching-=1
 		end
-		-- *** bug:
-		--		- sometimes stuck in grab
-		local grabbers=0
-		for enemy in all(enemies) do
-			if enemy.grabbing==true then
-				grabbers+=1
-				break
-			end
-		end
-		if grabbers==0 then
-			self.grabbed=0
-		end
-		-- apply gravity/momentum
-		if self.jumping>0 then
-			self.x+=self.jump_dir*self.speed
-		end
-		if self.jumping>jump_max/2 then
-			self.y-=gravity
-		else
-			self.y+=gravity
-			if self.y>baseline then
-				self.y=baseline
-			end
-		end
-		self.kicking-=1
-		if self.kicking<0 then
-			self.kicking=0
-		end
-		self.punching-=1
-		if self.punching<0 then
-			self.punching=0
-		end
-		self.jumping-=1
-		if self.jumping<0 then
-			self.jumping=0
-		end
-		-- if player is hurt
+				
+		-- update hurt
 		if self.hurt>0 then
 			self.hurt-=1
 		end
+		
+		if self.grabbed>0 then
+			player.health-=1
+		end
+		
 		-- if no health left then die
 		if self.health<=0 then
 			if test_mode==false then
 				change_mode("death")
 			end
 		end
+		
 		-- if we're at end of level
 		if (current_level%2==1 and self.x<=min_x) or
 				(current_level%2==0 and self.x+15>=max_x) then
 			change_mode("complete")
 		end
-		self.last_direction=player.direction
+		update_hitbox(self)
+
+		-- get input
+		local input=get_input()
+		
+		if #self.grabbers==0 then
+			if input.k and
+					self.old_input.k==false and
+					self.kicking<strike_duration*.75 then
+				self.kicking=strike_duration
+			end
+			if input.p and
+					self.old_input.p==false and
+					self.punching<strike_duration*.75 then
+				self.punching=strike_duration
+			end
+		end
+		
+		if self.state=="normal" then
+			if ticks%3==0 then
+				self.w_index+=1
+				if self.w_index>1 then
+					self.w_index=0
+				end
+			end
+			if input.x~=0 then
+				self.direction=input.x
+				if #self.grabbers>0 then
+					if self.old_input.x~=input.x then
+						self.grabbed-=1
+					end
+					if self.grabbed<=0 then
+						for enemy in all(self.grabbers) do
+							enemy.state="shook"
+							del(self.grabbers,enemy)
+						end
+						self.grabbed=0
+					end
+				elseif self.kicking==0 and
+					 self.punching==0 and
+					 self.position==up then
+				 self.x+=input.x*self.speed
+				 self.walking=true
+				else
+					self.walking=false
+				end
+			else
+				self.walking=false
+			end
+			if input.y==up and
+					self.kicking==0 and
+					self.punching==0 and
+					self.grabbed==0 then
+				self.state="jumping"
+				self.jumping=jump_max
+				self.jump_dir=input.x
+			elseif input.y==down then
+				self.position=down
+			else
+				self.position=up
+			end
+		
+		elseif self.state=="jumping" then
+			-- update jumping
+			if self.jumping>0 then
+				self.jumping-=1
+				self.y-=gravity*2
+				self.x+=self.jump_dir
+			else
+				self.state="falling"
+			end
+			
+		elseif self.state=="falling" then
+			self.x+=self.jump_dir
+			if self.y>=baseline then
+				self.state="normal"
+			end					
+		end
+				
+		self.old_input=input
+			
 	end
 	
+	-- draw player
 	player.draw=function(self)
 		local sprite
-		-- player hurt sprite
-		if player.hurt>0 then
-			sprite=36
-		-- jumping
-		elseif player.jumping>0 then
-			sprite=6
-			if player.jumping>jump_max-4 then
-				sprite=2
+		if self.state=="normal" then
+			sprite=0
+			if self.position==down then
+				sprite=14
+				if player.kicking>0 then
+					sprite=32
+					if is_climax(player.kicking) then
+   			sprite=42
+	   	end
+ 	 	elseif player.punching>0 then
+  			sprite=32
+	  		if is_climax(player.punching) then
+ 	 			sprite=34
+	  		end
+ 	 	end
+			elseif self.walking then
+				sprite=self.w_index*2
+ 	 else
+				if player.kicking>0 then
+					sprite=10
+					if is_climax(player.kicking) then
+						sprite=8
+					end
+				elseif player.punching>0 then
+					sprite=10
+					if is_climax(player.punching) then
+						sprite=12
+					end
+				end
 			end
-			-- if kicking
+			
+		elseif self.state=="jumping" or
+				self.state=="falling" then
 			if player.kicking>0 then
 				sprite=44
-				-- if climax of kick
 				if is_climax(player.kicking) then
 					sprite=38
 				end
-			-- if punching
 			elseif player.punching>0 then
 				sprite=44
-				-- if climax of punch
 				if is_climax(player.punching) then
 					sprite=40
 				end	
-			end				
-		-- ducking
-		elseif player.position==down then
-			-- default ducking sprite
-			sprite=14
-			-- if kicking
-			if player.kicking>0 then
-				sprite=32
-				-- if climax of kick
-				if is_climax(player.kicking) then
-   		sprite=42
-   	end
- 		-- if punching
-  	elseif player.punching>0 then
-  		sprite=32
-  		-- if climax of punch
-  		if is_climax(player.punching) then
-  			sprite=34
-  		end
-  	end
-		-- walking
-		elseif player.walking==true then
-			sprite=player.w_index*2
-		-- stepping
-		elseif player.stepping then
-			sprite=2+player.w_index*2
-		-- in normal state
-		else
-			-- if kicking
-			if player.kicking>0 then
-				sprite=10
-				-- if climax of kick
-				if is_climax(player.kicking) then
-					sprite=8
-				end
-			-- if punching
-			elseif player.punching>0 then
-				sprite=10
-				-- if climax of punch
-				if is_climax(player.punching) then
-					sprite=12
+			else
+				sprite=6
+				if self.state=="falling" then
+					sprite=44					
 				end
 			end
 		end
-		-- flip if looking left
+		
 		local flip_x=false
 		if self.direction==left then
 			flip_x=true
 		end
-		-- draw the sprite
+		
+		if test_mode and show_player_body then
+			draw_box(self.body,10)
+		end	
+		
+		if test_mode and show_player_hitbox then
+			draw_box(self.hitbox,10)
+		end		
+
 		spr(sprite,self.x,self.y,2,2,flip_x)
+
 	end
 
 end
 
 function init_player()
 	new_player()
-	--[[
-	local score=0
-	if player~=nil then
-		score=player.score	
-	end
-	player=new_entity()
-	player.score=score
-	player.health=100
-	player.y=baseline
-	player.grabbed=0
-	player.jumping=0
-	player.kicking=0
-	player.punching=0
-	update_body(player)
-	update_hitbox(player)
-	if current_level%2==1 then
-		player.x=max_x-16
-		player.direction=left
-	else
-		player.x=0
-		player.direction=right
-	end
-	]]
 end
 
 -- get game input
-function player_input()
-	if btn(⬅️) and player.jumping==0 then
-		player.direction=left
-	elseif btn(➡️) and player.jumping==0 then
-		player.direction=right
-	end
-	if btn(⬇️) then
-		player.position=down
-	elseif player.punching==0 and player.kicking==0 then
-		player.position=up
-	end
-	if btn(⬆️) and player.grabbed==0 then
-		if player.btnup_down==false then
-			if player.y==baseline then
-				player.jumping=jump_max
-			end
-			player.jump_dir=0
-			if btn(⬅️) then
-				player.jump_dir=left
-			elseif btn(➡️) then
-				player.jump_dir=right
-			end
-		end
-		player.btnup_down=true
-	else
-		player.btnup_down=false
-	end
-	if btn(4) and player.grabbed<1 then
-		if player.btn4_down==false then
-			player.kicking=strike_duration
-			sfx(9)
-		end
-		player.btn4_down=true
-	else
-		player.btn4_down=false
-	end
-	if btn(5) and player.grabbed<1 then
-		if player.btn5_down==false then
-			player.punching=strike_duration
-			sfx(9)
-		end
-		player.btn5_down=true
-	else
-		player.btn5_down=false
-	end
-	if btn(⬅️) and 
-			player.jumping<1 and
-			player.kicking<1 and 
-			player.punching<1 and 
-			player.grabbed<1 and 
-			player.position==up then
-		player.x-=player.speed
-		player.walking=true
-	elseif btn(➡️) and 
-			player.jumping<1 and
-			player.kicking<1 and 
-			player.punching<1 and 
-			player.grabbed<1 and
-			player.position==up then
-		player.x+=player.speed
-		player.walking=true
-	else
-		player.walking=false
-		player.w_index=0
-	end
-end
+function get_input()
 
---[[
-function update_player()
-
-	if ticks%5==0 then
-		player.w_index+=1
-		if player.w_index>1 then
-			player.w_index=0
-		end
+	local input={
+		x=0,
+		y=0,
+		k=false,
+		p=false
+	}
+	
+	if btn(⬅️) and btn(➡️)==false then
+		input.x=left
+	elseif btn(➡️) and btn(⬅️)==false then
+		input.x=right
 	end	
 	
-	if game_mode=="start" then
-		player.walking=true
-		player.x+=player.speed*player.direction
-	
-	-- play mode
-	elseif game_mode=="play" then
-		player_input()
-		-- shake off grabbers
-		if player.last_direction~=player.direction then
-			player.grabbed-=1
-			if player.grabbed<0 then
-				player.grabbed=0
-			end		
-		end
-		-- lose health if grabbed
-		if player.grabbed>0 then
-				player.health-=0.5
-		else
-			-- else drop all grabbers
-			for enemy in all(enemies) do
-				if enemy.grabbing==true then
-					enemy.shook=true
-				end
-			end
-		end
-		-- *** bug:
-		--		- sometimes stuck in grab
-		local grabbers=0
-		for enemy in all(enemies) do
-			if enemy.grabbing==true then
-				grabbers+=1
-				break
-			end
-		end
-		if grabbers==0 then
-			player.grabbed=0
-		end
-		-- apply gravity/momentum
-		if player.jumping>0 then
-			player.x+=player.jump_dir*player.speed
-		end
-		if player.jumping>jump_max/2 then
-			player.y-=gravity
-		else
-			player.y+=gravity
-			if player.y>baseline then
-				player.y=baseline
-			end
-		end
-		player.kicking-=1
-		if player.kicking<0 then
-			player.kicking=0
-		end
-		player.punching-=1
-		if player.punching<0 then
-			player.punching=0
-		end
-		player.jumping-=1
-		if player.jumping<0 then
-			player.jumping=0
-		end
-		update_body(player)
-		-- update the hitbox
-		update_hitbox(player)
-		-- if player is hurt
-		if player.hurt>0 then
-			player.hurt-=1
-		end
-		-- if no health left then die
-		if player.health<=0 then
-			if test_mode==false then
-				change_mode("death")
-			end
-		end
-		-- if we're at end of level
-		if (current_level%2==1 and player.x<=min_x) or
-				(current_level%2==0 and player.x+15>=max_x) then
-			change_mode("complete")
-		end
-		player.last_direction=player.direction
-
-	elseif game_mode=="death" then
-		if player.direction==left then
-			player.x+=gravity/2
-		else
-			player.x-=gravity/2
-		end
-		player.y+=gravity
-		if player.y>camera_y+128 then
-			change_mode("start")
-		end				
-
-	elseif game_mode=="complete" then
-		player.stepping=false
-		if (current_level%2==0 and player.x<max_x) or
-				(current_level%2==1 and player.x>min_x-3) then
-			player.walking=true
-			player.stepping=false
-			player.x+=complete_direction*1
-		else
-			player.walking=false
-			player.stepping=true
-			if player.w_index==1 then
-				player.x+=complete_direction*2
-				player.y-=2
-			end
-		end
-	
+	if btn(⬆️) and btn(⬇️)==false then
+		input.y=up
+	elseif btn(⬇️) and btn(⬆️)==false then
+		input.y=down
 	end
 	
-end
-]]
-
-function draw_player()
-
-	if test_mode and show_player_body then
-		rectfill(
-			player.body.x,
-			player.body.y,
-			player.body.x+player.body.width-1,
-			player.body.y+player.body.height-1,
-			10
-		)
-	end
-
-	-- default sprite
-	local sprite=0
-
-	-- dead sprite
-	if game_mode=="death" then
-		sprite=46
-
-	-- player hurt sprite
-	elseif player.hurt>0 then
-		sprite=36
-
-	-- jumping
-	elseif player.jumping>0 then
-		sprite=6
-		if player.jumping>jump_max-4 then
-			sprite=2
-		end
-		-- if kicking
-		if player.kicking>0 then
-			sprite=44
-			-- if climax of kick
-			if is_climax(player.kicking) then
-				sprite=38
-			end
-		-- if punching
-		elseif player.punching>0 then
-			sprite=44
-			-- if climax of punch
-			if is_climax(player.punching) then
-				sprite=40
-			end	
-		end
-						
-	-- ducking
-	elseif player.position==down then
-		-- default ducking sprite
-		sprite=14
-		-- if kicking
-		if player.kicking>0 then
-			sprite=32
-			-- if climax of kick
-			if is_climax(player.kicking) then
-   	sprite=42
-   end
-  -- if punching
-  elseif player.punching>0 then
-  	sprite=32
-  	-- if climax of punch
-  	if is_climax(player.punching) then
-  		sprite=34
-  	end
-  end
-  
-	-- walking
-	elseif player.walking==true then
-		sprite=player.w_index*2
-		
-	-- stepping
-	elseif player.stepping then
-		sprite=2+player.w_index*2
-		
-	-- in normal state
-	else
-		-- if kicking
-		if player.kicking>0 then
-			sprite=10
-			-- if climax of kick
-			if is_climax(player.kicking) then
-				sprite=8
-			end
-		-- if punching
-		elseif player.punching>0 then
-			sprite=10
-			-- if climax of punch
-			if is_climax(player.punching) then
-				sprite=12
-			end
-		end
-	
-	end
-				
-	-- flip if looking left
-	player.flip_x=false
-	if player.direction==left then
-		player.flip_x=true
+	if btn(4) then
+		input.k=true
 	end
 	
-	-- debug - show bodies/hitbox
-	if test_mode and show_player_hitbox then
-		rectfill(
-			player.hitbox.x,
-			player.hitbox.y,
-			player.hitbox.x+player.hitbox.width-1,
-			player.hitbox.y+player.hitbox.height-1,
-			10
-		)
+	if btn(5) then
+		input.p=true
 	end
 	
-	-- draw the sprite
-	spr(
-		sprite,
-		player.x,
-		player.y,
-		player.tile_width,
-		player.tile_height,
-		player.flip_x
-	)
-
+	return input
+	
 end
 
 -- ----------------------------
 -- projectiles
 -- ----------------------------
 
-function new_projectile(x,y,d)
-		local projectile={
-			x=x,
-			y=y,
-			body={
-				x=0,
-				y=0,
-				width=8,
-				height=8
-			},
-			direction=d,		
+function new_boomerang(x,y,pos,dr,th)
+	if projectiles==nil then
+		projectiles={}
+	end
+	local boomerang={
+		x=x,
+		y=y,
+		thrower=th,
+		position=pos,
+		direction=dr,
+		speed=2,
+		state="throw",
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=8
 		}
-		projectile.update=function(self)
-			debug(self.direction)
-			self.x+=self.direction*2
-			self.body.x=self.x
-			self.body.y=self.y
-			if (self.direction==right and self.x>camera_x+128) or
-					(self.direction==left and self.x<-8) then
-				del(projectiles,projectile)	
-			end			
+	}
+	boomerang.update=function(self)
+		self.body.x=self.x
+		self.body.y=self.y
+		self.rotation+=1
+		if self.rotation>3 then
+			self.rotation=0
 		end
-		projectile.draw=function(self)
-			local flip_x
-			if self.direction==right then
-				flip_x=false
-			else
-				flip_x=true
+		if self.state=="throw" then
+			self.x+=self.direction*self.speed
+			if (self.direction==left and self.x<=camera_x+16) or
+					(self.direction==right and self.x>camera_x+111) then
+				self.state="return"
 			end
-			spr(98,self.x,self.y,1,1,flip_x)
+		elseif state.throw=="return" then
+			self.x-=self.direction*self.speed
+			if (self.direction==left and self.x>=self.thrower.x) or
+					(self.direction==right and self.x<=self.thrower.x+15) then
+				del(projectiles,self)
+			end			
+		end				
+	end
+	boomerang.draw=function(self)
+		local flip_x
+		if self.xs<0 then
+			flip_x=true
+		else
+			flip_x=false
 		end
-		add(projectiles,projectile)
+		spr(68+self.rotation,self.x,self.y,1,1,flip_x)
+	end
+	add(projectiles,projectile)
 end
 
-function init_projectiles()
-	projectiles={}
+function new_fire(x,y,xs)
+	if projectiles==nil then
+		projectils={}
+	end
+	local fire={
+		x=x,
+		y=y,
+		xs=xs,
+		count=10,
+		body={
+			x=x,
+			y=y,
+			width=16,
+			height=8
+		}
+	}
+	fire.update=function(self)
+		self.x+=self.xs
+		self.body.x=self.x
+		if self.count<1 then
+			del(projectiles,self)
+		end				
+		self.count-=1
+	end
+	fire.draw=function(self)
+		spr(108,self.x,self.y,2,1,flip_x)
+	end
+	add(projectiles,fire)
+end
+
+function new_knife(x,y,xs)
+	if projectiles==nil then
+		projectiles={}
+	end
+	local knife={
+		x=x,
+		y=y,
+		xs=xs,
+		body={
+			x=x,
+			y=y,
+			width=8,
+			height=8
+		}
+	}
+	knife.update=function(self)
+		self.x+=self.xs
+		self.body.x=self.x
+		if (self.xs<0 and self.x<camera_x-8) or
+				(self.xs>0 and self.x>camera_x+127) then
+			del(projectiles,self)
+		end
+	end
+	knife.draw=function(self)
+		local flip_x
+		if self.xs>0 then
+			flip_x=false
+		else
+			flip_x=true
+		end
+		spr(98,self.x,self.y,1,1,flip_x)
+	end
+	add(projectiles,knife)
+end
+
+function new_shard(x,y,xs,ys)
+	if projectiles==nil then
+		projectiles={}
+	end
+	local shard={
+		x=x,
+		y=y,
+		xs=xs,
+		ys=ys,
+		body={
+			x=x,
+			y=y,
+			width=4,
+			height=4,
+		}
+	}
+	shard.update=function(self)
+		self.x+=self.xs
+		self.y+=self.ys
+		self.body.x=self.x
+		self.body.y=self.y
+		if self.x<camera_x-8 or
+				self.x>camera_x+127 or
+				self.y<camera_y-8 or
+				self.y>camera_y+127 then
+			del(projectiles,self)	
+		end			
+	end
+	shard.draw=function(self)
+		local box={
+			x=self.x,
+			y=self.y,
+			width=2,
+			height=2
+		}
+		draw_box(box,7)
+	end
+	add(projectiles,shard)
 end
 
 function update_projectiles()
@@ -1739,33 +1744,38 @@ end
 -- scores
 -- ------
 
-function init_scores()
-	scores={}
+function new_score(x,y,n)
+	if scores==nil then
+		scores={}
+	end
+	local score={
+		x=x,
+		y=y-8,
+		n=n,
+		count=10
+	}
+	score.update=function(self)
+		self.count-=1
+		if self.count<1 then
+ 		del(scores,self)
+ 	end
+	end
+	score.draw=function(self)
+ 	print(self.n,self.x+1,self.y+1,0)
+		print(self.n,self.x,self.y,7)
+	end
+	add(scores,score)
 end
 
 function draw_scores()
  for score in all(scores) do
- 	print(score.n,score.x+1,score.y+1,0)
-		print(score.n,score.x,score.y,7)
+		score:draw()
  end
-end
-
-function new_score(x,y,n)
-	local score={
-		x=x,
-		y=y,
-		n=n,
-		count=10
-	}
-	add(scores,score)
 end
 
 function update_scores()
 	for score in all(scores) do
-		score.count-=1
-		if score.count<1 then
- 		del(scores,score)
- 	end
+		score:update()
 	end
 end
 
@@ -1793,7 +1803,7 @@ function mode_complete_update()
 		update_camera(complete_x,camera_y)
 	else
 		music(-1)
-		update_player()
+		player:update_complete()
 	end
 	if complete_timer>120 then
 		change_mode("tally")
@@ -1804,7 +1814,7 @@ end
 function mode_complete_draw()
 	cls(12)
 	draw_level()
-	draw_player()
+	player:draw()
 	draw_osd()
 end
 
@@ -1845,9 +1855,8 @@ function mode_cutscene_draw()
 	spr(174,16,baseline,2,2)
 	player.x=127-32
 	player.y=baseline
-	player.walking=true
-	update_player()	
-	draw_player()
+	player:update_cutscene()
+	player:draw()
 	rectfill(0,104,127,127,0)
 end
 
@@ -1858,14 +1867,14 @@ function mode_death_init()
 end
 
 function mode_death_update()
-	update_player()
+	player:update_death()
 end
 
 function mode_death_draw()
 	cls(12)
 	draw_level()
 	draw_projectiles()
-	draw_player()
+	player:draw()
 	draw_enemies()
 	draw_scores()
 	draw_effects()
@@ -1884,8 +1893,7 @@ end
 function mode_intro_update()
 	intro_timer-=1
 	update_player()
-	--update_player()
-	--update_camera()
+	player:update_intro()
 	if intro_timer<0 then
 		change_mode("start")
 	end
@@ -1894,7 +1902,7 @@ end
 function mode_intro_draw()
 	cls(12)
 	draw_level()
-	draw_player()
+	player:draw()
 	camera(camera_x,camera_y)
 	local xc=camera_x+64
 	center_print("level "..current_level,xc,50,7,false)
@@ -1965,6 +1973,7 @@ function mode_play_update()
 	if test_mode then
 		test_input()
 	end
+	--player_input()
 	update_effects()
 	update_enemies()
 	--update_player()
@@ -1980,7 +1989,6 @@ function mode_play_draw()
 	cls(12)
 	draw_level()
 	draw_projectiles()
-	--draw_player()
 	player:draw()
 	draw_enemies()
 	draw_effects()
@@ -1993,10 +2001,7 @@ end
 function mode_start_init()
 	level_timer=2000
 	init_player()
-	init_effects()
 	init_enemies()
-	init_projectiles()
-	init_scores()
 	update_camera()
 	start_timer=56
 	sfx(8)
@@ -2014,7 +2019,7 @@ end
 function mode_start_draw()
 	cls(12)
 	draw_level()
-	draw_player()
+	player:draw()
 	update_camera()
 	local xc=camera_x+64
 	center_print("level "..current_level,xc,50,7,false)
@@ -2042,11 +2047,11 @@ end
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
-cccccc0919cccccccccccc0919cccccccccccc0919ccccccccccc0999cccccccccccc0919ccccccccccccc0999cccccccccccccc0999cccccccccccccccccccc
-cccccc9999cccccccccccc9999cccccccccccc9999ccccccccccc0919ccccccccccccc999ccccccccccccc0919cccccccccccccc0919cccccccccccccccccccc
+cccccc0949cccccccccccc0949cccccccccccc0949ccccccccccc0999cccccccccccc0949ccccccccccccc0999cccccccccccccc0999cccccccccccccccccccc
+cccccc9999cccccccccccc9999cccccccccccc9999ccccccccccc0949ccccccccccccc999ccccccccccccc0949cccccccccccccc0949cccccccccccccccccccc
 cccccc799ccccccccccccc799ccccccccccccc799cccccccccccc0999cc9ccccccccc799ccccc700ccccccc999cc9cccccccccccc999ccccccccccc0000ccccc
 ccccc00770ccccccccccc70077ccccccccccc00770ccccccccccc7777cc9cccccccc770970cc7790cccccc00779c9ccccccccccc07700999cccccc0999cccccc
-cccc000077ccccccccccc00077cccccccccc000077cccccccccc00797099ccccccc0007007077790ccccc70009909cccccccccc0770009c9cccccc0919cccccc
+cccc000077ccccccccccc00077cccccccccc000077cccccccccc00797099ccccccc0007007077790ccccc70009909cccccccccc0770009c9cccccc0949cccccc
 cccc9007770cccccccccc0097ccccccccccc9007770ccccccccc0099809cccccccc0007798877cccccccc70999099cccccccccc07700ccccccccccc999cccccc
 cccc99777c99ccccccccc09988cccccccccc99777c99cccccccc099887cccccccccc09999878cccccccccc7799cccccccccccccc7777ccccccccc00790cccccc
 ccccc9988cc99ccccccccc99878cccccccccc99887799cccccccc987787cccccccccc999877cccccccccccc8888cccccccccccc8888ccccccccc0077770ccccc
@@ -2058,11 +2063,11 @@ ccc099cccc990ccccccccc99ccccccccccc099cccccccccccccccc99ccccccccccccccccc99ccccc
 ccc0000ccc00cccccccccc000cccccccccc0000ccccccccccccccc000ccccccccccccccc000ccccccccc000ccc000ccccccc000ccc000cccccc000cccc000ccc
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000cccccccccccccc0000ccccccccccccccccccccccccc0000cccccccccccccccccccccc
 ccccccccccccccccccccccccccccccccccccccc00ccccccccccccc0999cccccccccccccc0999ccccccccccccccccccccccccc0999ccccccccccccccccccccccc
-cccccccccccccccccccccccccccccccccccccc0095cccccccccccc0919cccccccccccccc0919ccccccccccccccccccccccccc0919ccccccccc0ccccccccccccc
+cccccccccccccccccccccccccccccccccccccc0095cccccccccccc0949cccccccccccccc0949ccccccccccccccccccccccccc0949ccccccccc0ccccccccccccc
 ccccccccccccccccccccccccc0000ccccccccc0999cccccccccccc9999ccccccccccccccc999ccccccccccccccccccccccccc9999cccccccc099ccccc99ccccc
 ccccccc0000ccccccccccccc0999cccccccccc799ccccccccccccc799cccccc0cccccccc07700999cccccc0000ccccccccccc799ccccccccc0999cccc99ccccc
-cccccc0999cccccccccccccc0919ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9ccccc0999ccccccccccc70777cccccccc0099c0099cccccc
-cccccc0919ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700ccccccccc0919ccccccccccc00797ccccccccc0777709ccccccc
+cccccc0999cccccccccccccc0949ccccccccc00770ccccccccccc70777cccc90ccccccc0770009c9ccccc0999ccccccccccc70777cccccccc0099c0099cccccc
+cccccc0949ccccccccccccccc999cccccccc0007709cccccccccc007970cc790ccccccc07700ccccccccc0949ccccccccccc00797ccccccccc0777709ccccccc
 ccccccc999cc9ccccccccccc07700999cccc90077799ccccccccc0099887777ccccccccc7777cccccccccc999ccccccccccc009988cccccccc000777cccccccc
 cccccc00779c9cccccccccc0770009c9ccc990888cc99cccccccc099887877ccccccccc8888cccccccccc00790cccccccccc0998877ccccccc00077877cccccc
 ccccc70009909cccccccccc07700ccccccc9cc7878c99ccccccccc9877779cccccccccc77777cccccccc0077770cccccccccc9877877cccccc007787777ccccc
@@ -2072,60 +2077,60 @@ cccccc7777787ccccccccc7777787cccccccccc777cccccccccccc7777ccccccccccc7777c000ccc
 cccc97777c777ccccccc97777c777ccccccccc097cccccccccccc097cccccccccccc0977cccccccccccc7797777777cccccc0977cccccccccccccccc09777ccc
 ccc09777ccc99cccccc09777ccc99cccccccccc09cccccccccccc09ccccccccccccc09cccccccccccccc997cccc77990cccc09cccccccccccccccccc0c7099cc
 ccc00cccccc000ccccc00cccccc000cccccccccc00ccccccccccc0cccccccccccccc0cccccccccccccc000ccccccc000cccc0cccccccccccccccccccccc0000c
-ccccccccbbbbbb368888888888888888ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc77ccccccc7aa3333c38cccccccaa3333c38cc
-ccccccccbbbbb36baaa8aaaa8a8aaaaacccccccccccccccccccccccccccccccccccccccccccccccccccccccccc7777ccccc79833883833ccccccc833883833cc
-ccccccccbbbb36bbccc8a88a8a8a88a8ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc7d77d7ccccc8c833333c7cccccc8c833333c7cc
-ccccccccbbb36bbbccc8a8888a8888a8ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc777777cccccc7c83ac7ccccccccc8c83ac7cccc
-ccccccccbb36bbbbccc8aaaa8a8aaaa8cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc7777ccccccccc73aac7cc7ccccccc83aaccccc
-ccccccccb36bbbbbccc888888a888888ccccccccccccccccccccccccccccccccccccccccccccccccc7d77d7cc7d77d7ccccccc8c83b797cccccccc8c83baaccc
-cccccccc33333333cccccccc8a8ccccccccccccccccccccccccccccccccccccccccccccccccccccc7777777777777777cccc7cccc3337accccccccccc333bacc
-cccccccc00000000cccccccc8a8ccccccccccccccccccccccccccccccccccccccccccccccccccccc7777777777777777ccc797ccc8383bacccccccccc8383bac
-ffffffff7ccccccccccccccc8a8cccccccccccccccccccccccccccccccccccccccffffccccccccccd777777dd777777dcccc7ccc7c373baccccccccccc383bac
-4444444467cccccccccccccc8a8ccccccccccccccccccccccccccccccccccccccbffff8ccccccccccdd77ddccdd77ddccccccc8cc833bbaccccccc8cc833bbac
-ffffffffc67cccccaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccfbbff88fcc7777cccc7777cccc7777cccccc8c8ccc3bbacccccc8c8ccc3bbacc
-ffffffff44ffffff8888888888888888ccccccccccccccccccccccccccccccccffbb88ffc777777cc777777cc777777cccccc8a8c3bb7cccccccc8a8c3bbaccc
-44444444ccc555ccaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccfff88fff777777777777777777777777ccc87aa338b797ccccc88aa338bacccc
-ffffffffcccc67ccccccccccccccccccccccccccccccccccccccccccccccccccff88bbff77d77d7777d77d7777d77d77ccccc8333bac7cccccccc8333baccccc
-ffffffffccccc67cccccccccccccccccccccccccccccccccccccccccccccccccc88ffbbcc77dd77cc77dd77cc77dd77ccccccc7c79997c7ccccccccc3acccccc
-ffffffffcccccc67ccccccccccccccccccccccccccccccccccccccccccccccccccffffcccc7777cccc7777cccc7777ccccccccccc777cccccccccccccccccccc
-4444444444444444cccccccc88888888ccccccc2222cccccccccccc2222cccccccccccc2222cccccccccccccccccccccccccc8cc8cc8c8cccccaaccccccccccc
-8888888888888888cccccccca8aaaaaacccccc2999cccccccccccc2999cccccccccccc2999ccccccccccccccccccccccccc88aa8acaa8aaccca33acccccccccc
-8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc2929cccccccccccc2929cccccccccccc2929cccccccc4cccccccccccccc88aa7777a77a777ccbaabccccccc8cc
-8a8888a88a8888a844177777a8cccccccccccc9999cccccccccccc9999cccccccccccc9999ccccccc499ccccc99ccccc8a7777777777778cca3bb3acbcc8cccb
-8a8aaaa88aaaa8a84417777ca8cccccccccccc299ccccccccccccc299ccccccccccccc299cccccccc4999cccc99cccccc88aa7777a77a777cba33abcc8cccc8c
-8a888888888888a8cc1ccccc88ccccccccccc2f222cccccccccccff22fccccccccccccff22ccccccc4499cffffccccccccc88aa8acaa8aacc3baab3ccb3cc3bc
-8aaaaaaaaaaaaaa8cccccccccccccccccccccfff22ccccccccccfff222fcccccccccccfff2c99ccccc42222ffcccccccccccc8cc8cc8c8cccc3bb3cc3c8338c3
+ccccccccbbbbbb368888888888888888cccc8cccccc8ccccccccccccccccccccccccccccccccccccccccccccccc77cccccc7aa3333c38cccccccaa3333c38ccc
+ccccccccbbbbb36baaa8aaaa8a8aaaaacccc88cccc88cccccccccccccccccccccccccccccccccccccccccccccc7777cccc79833883833ccccccc833883833ccc
+ccccccccbbbb36bbccc8a88a8a8a88a8cccc88cccc88cccccc88888cc88888ccccccccccccccccccccccccccc7d77d7cccc8c833333c7cccccc8c833333c7ccc
+ccccccccbbb36bbbccc8a8888a8888a8cccc88cccc88cccccc888888888888ccccccccccccccccccccccccccc777777ccccc7c83ac7ccccccccc8c83ac7ccccc
+ccccccccbb36bbbbccc8aaaa8a8aaaa8888888cccc888888cc88cccccccc88cccccccccccccccccccccccccccc7777cccccccc73aac7cc7ccccccc83aacccccc
+ccccccccb36bbbbbccc888888a888888c88888cccc88888ccc88cccccccc88ccccccccccccccccccc7d77d7cc7d77d7cccccc8c83b797cccccccc8c83baacccc
+cccccccc33333333cccccccc8a8ccccccccccccccccccccccc88cccccccc88cccccccccccccccccc7777777777777777ccc7cccc3337accccccccccc333baccc
+cccccccc00000000cccccccc8a8cccccccccccccccccccccccc8cccccccc8ccccccccccccccccccc7777777777777777cc797ccc8383bacccccccccc8383bacc
+ffffffff7ccccccccccccccc8a8cccccccccccccccccccccccccccccccccccccccffffccccccccccd777777dd777777dccc7ccc7c373baccccccccccc383bacc
+4444444467cccccccccccccc8a8ccccccccccccccccccccccccccccccccccccccbffff8ccccccccccdd77ddccdd77ddcccccc8cc833bbaccccccc8cc833bbacc
+ffffffffc67cccccaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccfbbff88fcc7777cccc7777cccc7777ccccc8c8ccc3bbacccccc8c8ccc3bbaccc
+ffffffff44ffffff8888888888888888ccccccccccccccccccccccccccccccccffbb88ffc777777cc777777cc777777ccccc8a8c3bb7cccccccc8a8c3bbacccc
+44444444ccc555ccaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccfff88fff777777777777777777777777cc87aa338b797ccccc88aa338baccccc
+ffffffffcccc67ccccccccccccccccccccccccccccccccccccccccccccccccccff88bbff77d77d7777d77d7777d77d77cccc8333bac7cccccccc8333bacccccc
+ffffffffccccc67cccccccccccccccccccccccccccccccccccccccccccccccccc88ffbbcc77dd77cc77dd77cc77dd77cccccc7c79997c7ccccccccc3accccccc
+ffffffffcccccc67ccccccccccccccccccccccccccccccccccccccccccccccccccffffcccc7777cccc7777cccc7777cccccccccc777ccccccccccccccccccccc
+4444444444444444cccccccc88888888ccccccc0000cccccccccccc0000cccccccccccc0000cccccccccccccccccccccccccc8cc8cc8c8cccccaaccccccccccc
+8888888888888888cccccccca8aaaaaacccccc0999cccccccccccc0999cccccccccccc0999ccccccccccccccccccccccccc88aa8acaa8aaccca33acccccccccc
+8aaaaaa88aaaaaa8cc1ccccca8cccccccccccc0959cccccccccccc0959cccccccccccc0959cccccccc0cccccccccccccc88aa7777a77a777ccbaabccccccc8cc
+8a8888a88a8888a844177777a8cccccccccccc9999cccccccccccc9999cccccccccccc9999ccccccc099ccccc99ccccc8a7777777777778cca3bb3acbcc8cccb
+8a8aaaa88aaaa8a84417777ca8cccccccccccc299ccccccccccccc299ccccccccccccc299cccccccc0999cccc99cccccc88aa7777a77a777cba33abcc8cccc8c
+8a888888888888a8cc1ccccc88ccccccccccc2f222cccccccccccff22fccccccccccccff22ccccccc0099cffffccccccccc88aa8acaa8aacc3baab3ccb3cc3bc
+8aaaaaaaaaaaaaa8cccccccccccccccccccccfff22ccccccccccfff222fcccccccccccfff2c99ccccc02222ffcccccccccccc8cc8cc8c8cccc3bb3cc3c8338c3
 8888888888888888cccccccccccccccccccccfff2299ccccccccff2222fccccccccccccffff99cccccff2222ccccccccccccccccccccccccccc33cccc3b88b3c
-111111111122221188888888ccffccccccccccf99299ccccccccff2222f99cccccccccc2fffcccccccff2222ffccccccccffeecccccc7ccccccccccccccccccc
-11111111118e8811aaaaaaaaccffccccccccccf99fccccccccccf9922cc99ccccccccccfffccccccccff222ffffccccccfeeffecc77cc77ccccc33cccccc33cc
-1c1c1c1c118e8811ccccccccf4ff4fffcccccccfffccccccccccc99fffcccccccccccccfffccccccccffc2fff2fccccceeffeeffc7fcff7cccc3333cccc3333c
-c1c1c1c1c18e8811ccccccccf4ff4fffcccccccfffccccccccccccfffffccccccccccccfffcccccccccf99ff2ffccccceeffeeff7ccccfccccc37cccccc377cc
-1ccc1ccc17888871ccccccccccffccccccccccffffcccccccccccffffffcccccccccccffffcccccccccc99ff29ffccccffeeffeeccfcccc7cccc37cccccc337c
-cc1ccc1c11777711ccccccccccffccccccccc29ffcccccccccccfffccfffccccccccccfffccccccccccccccc29fffcccffeeffeec7ffcf7ccc88c37ccccccc37
-ccccccccc111111cccccccccccffccccccccc29cccccccccccc299cccc99cccccccccc299ccccccccccccccc2cf299ccceffeefcc77cc77cc833837cc8888c37
-ccccccccccccccccccccccccccffccccccccc222ccccccccccc2222ccc222ccccccccc2222ccccccccccccccccc2222ccceeffccccc7cccc83c337cc83c3337c
-ccccccc1111cccccccccccc1111ccccc777199c1111cccccccccccc1111cccccccccccc1111ccccccccccccccccccccccccccccccccccccccccccc44444ccccc
-cccccc7777cccccccccccc7777cccccccc71997777cccccccccc7c7777cccccccccccc7777cccccccccccccc1111ccccccccccccccccccccccccc44fff44cccc
-ccccc71919ccccccccccc71919ccccccccc1c71919ccccccccccc71919ccccccccccc71919ccccccccccc7c7777cccccccc1ccccccccccccccccc44f1fcccccc
-cccccc9999cccccccccc7c9999ccccccccccc79999cccccccccccc9999ccccccccccc79999cccccccccccc71919ccccccc177ccccc99ccccccccc44fffcccccc
-cccccc199ccccccccccccc199cccccccccccc7199ccccccccccccc199cccccccccccc7199cccccccccccccc9999ccccccc7999cccc99ccccccccc488fccccccc
+111111111122221188888888ccccccccccccccf99299ccccccccff2222f99cccccccccc2fffcccccccff2222ffccccccccffeecccccc7ccccccccccccccccccc
+11111111118e8811aaaaaaaaccccccccccccccf99fccccccccccf9922cc99ccccccccccfffccccccccff222ffffccccccfeeffecc77cc77ccccc33cccccc33cc
+1c1c1c1c118e8811cccccccccccccccccccccccfffccccccccccc99fffcccccccccccccfffccccccccffc2fff2fccccceeffeeffc7fcff7cccc3333cccc3333c
+c1c1c1c1c18e8811cccccccccccccccccccccccfffccccccccccccfffffccccccccccccfffcccccccccf99ff2ffccccceeffeeff7ccccfccccc37cccccc377cc
+1ccc1ccc17888871ccccccccccccccccccccccffffcccccccccccffffffcccccccccccffffcccccccccc99ff29ffccccffeeffeeccfcccc7cccc37cccccc337c
+cc1ccc1c11777711ccccccccccccccccccccc29ffcccccccccccfffccfffccccccccccfffccccccccccccccc29fffcccffeeffeec7ffcf7ccc88c37ccccccc37
+ccccccccc111111cccccccccccccccccccccc29cccccccccccc299cccc99cccccccccc299ccccccccccccccc2cf299ccceffeefcc77cc77cc833837cc8888c37
+ccccccccccccccccccccccccccccccccccccc222ccccccccccc2222ccc222ccccccccc2222ccccccccccccccccc2222ccceeffccccc7cccc83c337cc83c3337c
+ccccccc4444cccccccccccc4444ccccccccc99c4444cccccccccccc4444cccccccccccc4444ccccccccccccccccccccccccccccccccccccccccccc44444ccccc
+cccccc7777cccccccccccc7777cccccccccc997777cccccccccc7c7777cccccccccccc7777cccccccccccccc4444ccccccccccccccccccccccccc44fff44cccc
+ccccc749d9ccccccccccc749d9ccccccccccc749d9ccccccccccc749d9ccccccccccc749d9ccccccccccc7c7777cccccccc4ccccccccccccccccc44fdfcccccc
+cccccc9999cccccccccc7c9999ccccccccccc79999cccccccccccc9999ccccccccccc79999cccccccccccc749d9ccccccc477ccccc99ccccccccc44fffcccccc
+cccccc499ccccccccccccc199cccccccccccc7199ccccccccccccc199cccccccccccc7199cccccccccccccc9999ccccccc7999cccc99ccccccccc488fccccccc
 ccccc77117ccccccccccc17111ccccccccccc11111ccccccccccc7711777799cccccc11111ccccccccccccc199cccccccc7199c7777cccccccccc4ff88fccccc
 cccc7771117cccccccccc77711ccccccccccc17711cccccccccc7771117779ccccccc17711ccccccccccc77111ccccccc7c1111177cccccccccccc8ff8fccccc
 cccc7711117cccccccccc7771199ccccccccc1777799cccccccc7711117ccccccccc71777799cccccccc7771117cccccccc771111cccccccccccccc8fffccccc
-cccc771111799ccccccccc799199cccccccccc177799cccccccc771111cccccc777191177799cccccccc77111177ccccccc77111177ccccccccccc888fcccccc
-cccc79911cc99ccccccccc7997cccccccccccc1111cccccccccc79911ccccccccc71991111cccccccccc79911cc799ccccc771117777cccccccccc8888cccccc
-ccccc99777ccccccccccccc777ccccccccccccc777ccccccccccc997777cccccccc1ccc777ccccccccccc997777c99ccccc77c777717ccccccccccc888cccccc
+cccc771111799ccccccccc799199cccccccccc177799cccccccc771111cccccccccc91177799cccccccc77111177ccccccc77111177ccccccccccc888fcccccc
+cccc79911cc99ccccccccc7997cccccccccccc1111cccccccccc79911ccccccccccc991111cccccccccc79911cc799ccccc771117777cccccccccc8888cccccc
+ccccc99777ccccccccccccc777ccccccccccccc777ccccccccccc997777cccccccccccc777ccccccccccc997777c99ccccc77c777717ccccccccccc888cccccc
 cccccc77777cccccccccccc777ccccccccccccc777cccccccccccc777777ccccccccccc777cccccccccccc777777cccccccc79977177ccccccccccc888cccccc
 ccccc777777ccccccccccc7777cccccccccccc7777ccccccccccc777c777cccccccccc7777ccccccccccc777c777ccccccccc99771977cccccccccc8f8cccccc
 cccc777cc777ccccccccc1977cccccccccccc1977ccccccccccc777ccc77ccccccccc1977ccccccccccc777ccc77ccccccccccccc19777cccccccccffccccccc
 ccc199cccc99ccccccccc19cccccccccccccc19cccccccccccc199ccc199ccccccccc19cccccccccccc199ccc199ccccccccccccc1c7199cccccc8f8ffcccccc
 ccc1111ccc111cccccccc111ccccccccccccc111ccccccccccc1111ccc111cccccccc111ccccccccccc1111ccc111ccccccccccccccc1111ccccc88c888ccccc
-cccccccc4444cccccccccccc4444cccc000009904444cccccccccccc4444ccccccc0ccccccccccccccccccccccccccccccccccc0cccccccccccccccccccccccc
-ccccccc4999cccccccccccc4999cccccccccc994999cccccccccccc4999ccccccccc0ccccccccccccccccccccccccccccccccccc0ccccccccccccccccccccccc
-ccccccc4919cccccccccccc4919c0ccccccccc64919cccccccccccc4919cccccccccc0ccccccccccccccccccccccccccccc4ccccc0ccccccccccc44444cccccc
-ccccccc9999cc0ccccccccc9999c0ccccccccc69999cccccccccccc9999cc99ccccccc0cc4444cccccccccccc4444ccccc499ccccc99cccccccc44fff44ccccc
-ccccccc499ccc0ccccccccc499cc0ccccccccc6499ccccccccccccc499cc609cccccccc94999cccccccccccc4999cccccc4999cccc99cccccccc44f1fccccccc
-cccccc66446cc0cccccccc46444c0ccccccccc44444ccccccccccc66446606ccccccccc949196ccccccccccc4919cccccc4499c6666c0ccccccc44fffccccccc
+cccccccc0000cccccccccccc0000cccc000009900000cccccccccccc0000ccccccc0ccccccccccccccccccccccccccccccccccc0cccccccccccccccccccccccc
+ccccccc0999cccccccccccc0999cccccccccc990999cccccccccccc0999ccccccccc0ccccccccccccccccccccccccccccccccccc0ccccccccccccccccccccccc
+ccccccc0959cccccccccccc0959c0ccccccccc60959cccccccccccc0959cccccccccc0ccccccccccccccccccccccccccccc0ccccc0ccccccccccc44444cccccc
+ccccccc9999cc0ccccccccc9999c0ccccccccc69999cccccccccccc9999cc99ccccccc0cc0000cccccccccccc0000ccccc099ccccc99cccccccc44fff44ccccc
+ccccccc499ccc0ccccccccc499cc0ccccccccc6499ccccccccccccc499cc609cccccccc90999cccccccccccc0999cccccc0999cccc99cccccccc44fdfccccccc
+cccccc66446cc0cccccccc46444c0ccccccccc44444ccccccccccc66446606ccccccccc909596ccccccccccc0959cccccc0099c6666c0ccccccc44fffccccccc
 ccccc6664446c0cccccccc66644c0ccccccccc46644cccccccccc66644466ccccccccccc99996ccccccccccc9999ccccccc4444466ccc0cccccc488fcccccccc
 ccccc6644446c0cccccccc6664499ccccccccc4666699cccccccc6644446cccccccccccc49966ccccccccccc499cccccccc664444cccccccccccf8888ccccccc
 ccccc664444699ccccccccc699499cccccccccc466699cccccccc664444ccccccccccc664446cccccccccc6644466699ccc66444466cccccccc0ff888ccccccc
