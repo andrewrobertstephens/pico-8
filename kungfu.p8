@@ -15,7 +15,7 @@ show_enemy_hitboxes=true
 show_player_body=true
 show_player_hitbox=true
 show_test_osd=true
-skip_cutscene=false
+skip_cutscene=true
 logfile="kungfu"
 
 -- constants
@@ -40,6 +40,15 @@ ticks=0
 fire_time=30
 cutscene_timer=0
 cutscene_flash=false
+msc_bg=0
+msc_intro=5
+snd_strike=9
+snd_hit=10
+snd_snake=11
+snd_dragon=12
+snd_count=14
+snd_boomerang=15
+snd_walking=8
 
 enemy_group_counter=0
 enemy_counter=0
@@ -103,42 +112,42 @@ function _update()
 		end
 	end
 	if game_mode=="menu" then
-		mode_menu_update()
+		menu_mode:update()
 	elseif game_mode=="intro" then
 		mode_intro_update()
 	elseif game_mode=="start" then
 		mode_start_update()
 	elseif game_mode=="play" then
-		mode_play_update()
+		play_mode:update()
 	elseif game_mode=="death" then
-		mode_death_update()
+		death_mode:update()
 	elseif game_mode=="complete" then
-		mode_complete_update()
+		complete_mode:update()
 	elseif game_mode=="tally" then
-		mode_tally_update()
+		tally_mode:update()
 	elseif game_mode=="cutscene" then
-		mode_cutscene_update()
+		cutscene_mode:update()
 	end
 	last_time=current_time
 end
 
 function _draw()
 	if game_mode=="menu" then
-		mode_menu_draw()
+		menu_mode:draw()
 	elseif game_mode=="intro" then
 		mode_intro_draw()
 	elseif game_mode=="start" then
 		mode_start_draw()
 	elseif game_mode=="play" then
-		mode_play_draw()
+		play_mode:draw()
 	elseif game_mode=="death" then
-		mode_death_draw()
+		death_mode:draw()
 	elseif game_mode=="complete" then
-		mode_complete_draw()
+		complete_mode:draw()
 	elseif game_mode=="tally" then
-		mode_tally_draw()
+		tally_mode:draw()
 	elseif game_mode=="cutscene" then
-		mode_cutscene_draw()
+		cutscene_mode:draw()
 	end
 end
 
@@ -164,15 +173,15 @@ function change_mode(mode)
 	elseif game_mode=="start" then
 		mode_start_init()
 	elseif game_mode=="play" then
-		mode_play_init()
+		play_mode:init()
 	elseif game_mode=="death" then
-		mode_death_init()
+		death_mode:init()
 	elseif game_mode=="complete" then
-		mode_complete_init()
+		complete_mode:init()
 	elseif game_mode=="tally" then
-		mode_tally_init()
+		tally_mode:init()
 	elseif game_mode=="cutscene" then
-		mode_cutscene_init()
+		cutscene_mode:init()
 	end
 end
 
@@ -282,13 +291,15 @@ function draw_osd()
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 	if test_mode and show_test_osd then
 		cursor(camera_x+2,camera_y+107)
-		--print("game_mode="..game_mode,7)
+		print("game_mode="..game_mode,7)
 		--print("current_level="..current_level,7)
 		--cursor(camera_x+60,camera_y+107)
+		--[[
 		local boss=get_boss()
 		if boss then
 			print("boss.state="..boss.state,7)
 		end
+		]]
 	end
 end
 
@@ -691,6 +702,7 @@ function new_knifeguy(offset)
 				else
 					self.attack_height=down
 				end
+				sfx(snd_strike)
 				new_knife(self.x,y,self.direction*2)
 			elseif self.throwing<1 then
 				self.state="cooldown"
@@ -838,6 +850,7 @@ function new_stickguy(offset)
 				else
 					self.state="swinging"
 					self.swinging=enemy_strike_time
+					sfx(snd_strike)
 				end			
 			end
 		elseif self.state=="swinging" then
@@ -867,8 +880,9 @@ function new_stickguy(offset)
 		end
 		self.body.x=self.x+4
 		self.body.y=self.y
-		if collision(self.hitbox,player.body) then
+		if collision(self.hitbox,player.body) and self.swinging==1 then
 			player:hurt(self.power)
+			sfx(snd_hit)
 			new_effect("player_hit",self.hitbox.x,self.hitbox.y)
 		end
 	end
@@ -1049,6 +1063,7 @@ function new_dragon(x)
 			if self.y>bottom then
 				self.y=bottom
 				self.state="appearing"
+				sfx(snd_dragon)
 			end
 		elseif self.state=="appearing" then
 			if ticks%3==0 then
@@ -1178,7 +1193,7 @@ function new_snake(offset)
 		if self.state=="falling" then
 			self.y+=gravity
 			if self.y>bottom then
-				sfx(11)
+				sfx(snd_snake)
 				self.y=bottom
 				self.state="breaking"
 				self.breaking=5
@@ -1312,6 +1327,7 @@ function new_boomerangguy(offset)
 				self.throwing=throw_time
 			else
 				if self.throwing==throw_time/2 then
+					sfx(snd_strike)
 					new_boomerang(self)
 				end
 				self.throwing-=1
@@ -1323,6 +1339,7 @@ function new_boomerangguy(offset)
 				self.cooldown=cooldown_time
 			else
 				if self.throwing==throw_time/2 then
+					sfx(snd_strike)
 					new_boomerang(self)
 				end
 				self.throwing-=1
@@ -1368,47 +1385,32 @@ end
 -- ----------------------------
 
 function new_player()
-
+	local x=0
+	local direction=right
+	if is_odd(current_level) then
+		x=max_x-16
+		direction=left
+	end
 	player={
-		score=0,
-		health=100,
-		y=baseline,
-		grabbers={},
+		direction=direction,
 		grabbed=0,
+		health=100,
+		hit=0,
+		hurt=0,
+		lives=2,
 		jumping=0,
 		kicking=0,
 		punching=0,
-		hurt=0,
+		score=0,
 		speed=1,
 		state="normal",
-		hit=0,
-		old_input={
-			x=0,
-			y=0,
-			k=false,
-			p=false
-		},
-		body={
-			x=0,
-			y=0,
-			width=8,
-			height=16
-		},
-		hitbox={
-			x=0,
-			y=0,
-			width=4,
-			height=4
-		}
+		x=x,
+		y=baseline,
+		body={x=0,y=0,width=8,height=16},
+		grabbers={},
+		hitbox={x=0,y=0,width=4,height=4},
+		old_input={x=0,y=0,k=false,p=false},
 	}
-
-	if is_odd(current_level) then
-		player.x=max_x-16
-		player.direction=left
-	else
-		player.x=0
-		player.direction=right
-	end
 
 	player.collisions=function(self)	
 		for enemy in all(enemies) do
@@ -1424,7 +1426,7 @@ function new_player()
 						enemy.x-=enemy.direction
 					end
 					sfx(-1)
-					sfx(10)
+					sfx(snd_hit)
 				end
 			end
 		end
@@ -1437,7 +1439,6 @@ function new_player()
 		else
 			self.x=0
 		end
-		self.score=0
 		self.health=100
 		self.y=baseline
 		self.grabbed=0
@@ -1446,7 +1447,6 @@ function new_player()
 		self.punching=0
 		self.state="normal"
 		self.hit=0
-		self.stepping=false
 	end
 	
 	player.hurt=function(self,damage)
@@ -1466,12 +1466,6 @@ function new_player()
 		else
 			self.walking=false
 			self.stepping=true
-			--[[
-			if self.w_index==1 then
-				self.x+=complete_direction*2
-				self.y-=2
-			end
-			]]
 		end
 	end
 	
@@ -1509,8 +1503,7 @@ function new_player()
 		if self.y>baseline then
 			self.y=baseline
 		end
-		
-
+	
 		-- update striking
 	
 		if self.kicking>0 then
@@ -1538,8 +1531,8 @@ function new_player()
 		end
 		
 		-- if we're at end of level
-		if (is_odd(current_level) and self.x<=min_x) or
-				(is_even(current_level) and self.x+15>=max_x) then
+		if (is_odd(current_level) and self.x<=min_x-2) or
+				(is_even(current_level) and self.x+8>=max_x) then
 			change_mode("complete")
 		end
 		--update_hitbox(self)
@@ -1614,6 +1607,10 @@ function new_player()
 				self.state="normal"
 			end					
 		end
+		
+		if self.kicking==strike_duration or self.punching==strike_duration then
+			sfx(snd_strike)
+		end
 				
 		-- always update body
 		self.body.x=self.x+4
@@ -1621,9 +1618,6 @@ function new_player()
 		if self.position==down then
 			self.body.y=self.y+8
 		end
-		
-		-- always update hitbox
-		--update_hitbox(self)
 			
 		self.hitbox.x=self.x
 		self.hitbox.y=self.y
@@ -1641,9 +1635,7 @@ function new_player()
 			self.hitbox.height=16
 		end
 
-
 		self:collisions()
-
 		self.old_input=input
 			
 	end
@@ -1686,6 +1678,9 @@ function new_player()
 				end
 			end
 			
+		elseif self.state=="climbing" then
+			sprite=2+anim_index*2		
+		
 		elseif self.state=="jumping" or
 				self.state=="falling" then
 			if player.kicking>0 then
@@ -1731,36 +1726,24 @@ end
 
 -- get game input
 function get_input()
-
-	local input={
-		x=0,
-		y=0,
-		k=false,
-		p=false
-	}
-	
+	local input={x=0,y=0,k=false,p=false}
 	if btn(⬅️) and btn(➡️)==false then
 		input.x=left
 	elseif btn(➡️) and btn(⬅️)==false then
 		input.x=right
 	end	
-	
 	if btn(⬆️) and btn(⬇️)==false then
 		input.y=up
 	elseif btn(⬇️) and btn(⬆️)==false then
 		input.y=down
 	end
-	
 	if btn(4) then
 		input.k=true
 	end
-	
 	if btn(5) then
 		input.p=true
 	end
-	
 	return input
-	
 end
 
 -- ----------------------------
@@ -1823,36 +1806,6 @@ function new_boomerang(th)
 		spr(68+self.rotation,self.x,self.y,1,1,flip_x)
 	end
 	add(projectiles,boomerang)
-end
-
-function new_fire(x,y,xs)
-	if projectiles==nil then
-		projectiles={}
-	end
-	local fire={
-		x=x,
-		y=y,
-		xs=xs,
-		count=10,
-		body={
-			x=x,
-			y=y,
-			width=16,
-			height=8
-		}
-	}
-	fire.update=function(self)
-		self.x+=self.xs
-		self.body.x=self.x
-		if self.count<1 then
-			del(projectiles,self)
-		end				
-		self.count-=1
-	end
-	fire.draw=function(self)
-		spr(108,self.x,self.y,2,1,flip_x)
-	end
-	add(projectiles,fire)
 end
 
 function new_knife(x,y,xs)
@@ -1952,9 +1905,9 @@ function draw_projectiles()
 	end
 end
 
--- ------
+-- ----------------------------
 -- scores
--- ------
+-- ----------------------------
 
 function new_score(x,y,n)
 	if scores==nil then
@@ -1995,191 +1948,167 @@ end
 -- complete level program
 -------------------------------
 
-function mode_complete_init()
-	if is_odd(current_level) then
-		complete_x=0
-		complete_direction=left
-	else
-		complete_x=max_x-128
-		complete_direction=right
-	end
-	complete_timer=0
-	player.walking=false
-end
-
-function mode_complete_update()
-	if complete_timer<=48 then
-		complete_x+=complete_direction
-		update_camera(complete_x,camera_y)
-	else
-		music(-1)
-		player:update_complete()
-	end
-	if complete_timer>120 then
-		change_mode("tally")
-	end
-	complete_timer+=1
-end
-
-function mode_complete_draw()
-	cls(12)
-	draw_level()
-	player:draw()
-	draw_osd()
-end
+complete_mode={
+	init=function(self)
+		self.x=camera_x
+		self.direction=left
+		self.state="normal"
+		self.timer=48
+		player.state="normal"
+		if is_even(current_level) then
+			self.direction=right
+		end
+	end,
+	update=function(self)
+		debug(self.state)
+		if self.state=="normal" then
+			self.x+=self.direction
+			update_camera(self.x)
+			if self.timer<1 then
+				music(-1)
+				self.state="climbing"
+				player.state="climbing"
+			end
+			self.timer-=1
+		elseif self.state=="climbing" then
+			if player.y<camera_y-16 then
+				change_mode("tally")
+			end
+			if anim_index==1 then
+				player.y-=2
+			end
+			player.x+=self.direction
+		end
+	end,
+	draw=function(self)
+		cls(12)
+		draw_level()
+		player:draw()
+		draw_osd()
+	end,
+}
 
 -------------------------------
 -- cut scene program
 -------------------------------
 
-function mode_cutscene_init()
-	cutscene_flash=false
-	cutscene_timer=0
-	music(5)
-end
-
-function mode_cutscene_update()
-	if ticks%8==0 then
-		cutscene_flash=not cutscene_flash
+cutscene_mode={
+	cutscene_flash=false,
+	cutscene_timer=0,
+	init=function(self)
+		music(msc_intro)
+	end,
+	update=function(self)
+		if ticks%8==0 then
+			cutscene_flash=not cutscene_flash
+		end
+		if cutscene_timer>149 then
+			change_mode("start")
+		end
+		cutscene_timer+=1
+	end,
+	draw=function(self)
+		cls(12)
+		rectfill(0,0,127,23,0)
+		map(16,7,0,baseline+15,16,3)
+		center_print("save sylvia from mr.x",66,32,7,true)
+		if cutscene_flash then
+			cursor(8,48)
+			color(7)
+			print("help me")
+			cursor(8,56)
+			print("thomas!")
+		end
+		if cutscene_timer>100 then
+			cursor(90,56)
+			print("sylvia!")
+		end
+		spr(174,16,baseline,2,2)
+		player.x=127-32
+		player.y=baseline
+		player:update_cutscene()
+		player:draw()
+		rectfill(0,104,127,127,0)
 	end
-	if cutscene_timer>149 then
-		change_mode("start")
-	end
-	cutscene_timer+=1
-end
-
-function mode_cutscene_draw()
-	cls(12)
-	rectfill(0,0,127,23,0)
-	map(16,7,0,baseline+15,16,3)
-	center_print("save sylvia from mr.x",66,32,7,true)
-	if cutscene_flash then
-		cursor(8,48)
-		color(7)
-		print("help me")
-		cursor(8,56)
-		print("thomas!")
-	end
-	if cutscene_timer>100 then
-		cursor(90,56)
-		print("sylvia!")
-	end
-	spr(174,16,baseline,2,2)
-	player.x=127-32
-	player.y=baseline
-	player:update_cutscene()
-	player:draw()
-	rectfill(0,104,127,127,0)
-end
+}
 
 -------------------------------
 -- death program
 -------------------------------
 
-function mode_death_init()
-	music(-1)
-end
-
-function mode_death_update()
-	player:update_death()
-end
-
-function mode_death_draw()
-	cls(12)
-	draw_level()
-	draw_projectiles()
-	player:draw()
-	draw_enemies()
-	draw_scores()
-	draw_effects()
-	draw_osd()
-end
-
--------------------------------
--- intro program
--------------------------------
-
-function mode_intro_init()
-	init_player()
-	intro_timer=160
-	update_camera()
-	music(5)
-end
-
-function mode_intro_update()
-	intro_timer-=1
-	update_player()
-	player:update_intro()
-	if intro_timer<0 then
-		change_mode("start")
+death_mode={
+	init=function(self)
+		music(-1)
+	end,
+	update=function(self)
+		player:update_death()
+	end,
+	draw=function(self)
+		cls(12)
+		draw_level()
+		draw_projectiles()
+		player:draw()
+		draw_enemies()
+		draw_scores()
+		draw_effects()
+		draw_osd()
 	end
-end
-
-function mode_intro_draw()
-	cls(12)
-	draw_level()
-	player:draw()
-	camera(camera_x,camera_y)
-	local xc=camera_x+64
-	center_print("level "..current_level,xc,50,7,false)
-	draw_osd()
-end
+}
 
 -------------------------------
 -- menu program
 -------------------------------
 
-function mode_menu_update()
-	if btn(4) and btn(5) then
-		if skip_cutscene then
-			change_mode("start")
-		else
-			change_mode("cutscene")
-		end
-	end
-end
-
-function mode_menu_draw()
-	-- draw sprite of string rows
-	function str_spr(str,sx,sy)
-		local y=sy
-		for row in all(str) do
-			for i=1,#row do
-				local x=sx+i-1
-				local c=tonum(sub(row,i,i))
-				pset(x,y,c)
+menu_mode={
+	init=function(self)
+	end,
+	update=function(self)
+		if btn(4) and btn(5) then
+			if test_mode and skip_cutscene then
+				change_mode("start")
+			else
+				change_mode("cutscene")
 			end
-			y+=1
 		end
+	end,
+	draw=function(self)
+		function str_spr(str,sx,sy)
+			local y=sy
+			for row in all(str) do
+				for i=1,#row do
+					local x=sx+i-1
+					local c=tonum(sub(row,i,i))
+					pset(x,y,c)
+				end
+				y+=1
+			end
+		end
+		local title_spr={
+			'00990099009900990099999000099999000000000999999009900990',
+			'08990899089908990899999900999999000000008999999089908990',
+			'08999999089908990899889908998880000000008998880089908990',
+			'08999990089908990899089908990000000000008999999089908990',
+			'08999990089908990899089908990099000000008999999089908990',
+			'08998899089999990899089908999999000000008998880089999990',
+			'08990899089999900899089908999999000000008990000089999900',
+			'08800880088888000880088008888880000000008880000088888000',
+		}
+		cls(0)
+		local y=32
+		for i=0,112,16 do
+			spr(96,i,y)
+			spr(96,i,y+20)
+			spr(97,i+8,y)
+			spr(97,i+8,y+20)
+		end
+		cursor(64-7*8/2,y+10)
+		color(7)
+		str_spr(title_spr,64-7*8/2,y+10)
+		center_print("press 🅾️+❎ to start",64,y+40,7)
+		spr(77,9,68,1,2)
+		spr(77,110,68,1,2,true)
 	end
-	-- save space on spritesheet
-	local title_spr={
-		'00990099009900990099999000099999000000000999999009900990',
-		'08990899089908990899999900999999000000008999999089908990',
-		'08999999089908990899889908998880000000008998880089908990',
-		'08999990089908990899089908990000000000008999999089908990',
-		'08999990089908990899089908990099000000008999999089908990',
-		'08998899089999990899089908999999000000008998880089999990',
-		'08990899089999900899089908999999000000008990000089999900',
-		'08800880088888000880088008888880000000008880000088888000',
-	}
-	cls(0)
-	local y=32
-	for i=0,112,16 do
-		spr(96,i,y)
-		spr(96,i,y+20)
-		spr(97,i+8,y)
-		spr(97,i+8,y+20)
-	end
-	--spr(70,64-7*8/2,y+10,7,1)
-	cursor(64-7*8/2,y+10)
-	color(7)
-	str_spr(title_spr,64-7*8/2,y+10)
-	
-	center_print("press 🅾️+❎ to start",64,y+40,7)
-	spr(77,9,68,1,2)
-	spr(77,110,68,1,2,true)
-end
+}
 
 -------------------------------
 -- play (main) program
@@ -2206,42 +2135,40 @@ function process_level()
 	end
 end
 
-function mode_play_init()
-	music(0)
-	co_proc_lev=cocreate(process_level)
-end
-
-function mode_play_update()
-	if test_mode then
-		test_input()
-	end
-	--player_input()
-	local level=levels[current_level]
-	--debug(costatus(co_proc_lev))
-	if ticks%level.delay==0 then
-		if test_mode==false or no_enemies==false then
-			coresume(co_proc_lev)
+play_mode={
+	init=function(self)
+		music(msc_bg)
+		co_proc_lev=cocreate(process_level)
+	end,
+	update=function(self)
+		if test_mode then
+			test_input()
 		end
+		local level=levels[current_level]
+		if ticks%level.delay==0 then
+			if test_mode==false or no_enemies==false then
+				coresume(co_proc_lev)
+			end
+		end
+		update_effects()
+		update_enemies()
+		player:update()
+		update_projectiles()
+		update_scores()
+		update_camera()
+		level_timer-=0.5
+	end,
+	draw=function(self)
+		cls(12)
+		draw_level()
+		draw_projectiles()
+		player:draw()
+		draw_enemies()
+		draw_effects()
+		draw_scores()
+		draw_osd()
 	end
-	update_effects()
-	update_enemies()
-	player:update()
-	update_projectiles()
-	update_scores()
-	update_camera()
-	level_timer-=0.5
-end
-
-function mode_play_draw()
-	cls(12)
-	draw_level()
-	draw_projectiles()
-	player:draw()
-	draw_enemies()
-	draw_effects()
-	draw_scores()
-	draw_osd()
-end
+}
 
 -------------------------------
 -- start program
@@ -2254,12 +2181,12 @@ function mode_start_init()
 	else
 		player:init(right)
 	end
+	enemies={}
 	update_camera()
-	sfx(8)
+	sfx(snd_walking)
 end
 
 function mode_start_update()
-	--update_player()
 	player:update_start()
 	if (player.direction==left and player.x<=max_x-64) or
 			(player.direction==right and player.x>=64) then
@@ -2281,22 +2208,22 @@ end
 -- tally program
 -------------------------------
 
-function mode_tally_init()
-end
-
-function mode_tally_update()
-	level_timer-=10
-	player.score+=10
-	sfx(14)
-	if level_timer<1 then
-		current_level+=1
-		change_mode("start")
+tally_mode={
+	init=function(self)
+	end,
+	update=function(self)
+		level_timer-=10
+		player.score+=10
+		sfx(snd_count)
+		if level_timer<1 then
+			current_level+=1
+			change_mode("start")
+		end
+	end,
+	draw=function(self)
+		draw_osd()
 	end
-end
-
-function mode_tally_draw()
-	draw_osd()
-end
+}
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
@@ -2603,9 +2530,10 @@ __sfx__
 010800003167424674006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604006040060400604
 010c00002867500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005
 000100003445033450334503345033450344503545037450384503a4503b45030450324503445035450384503b4503145033450354503745039450304503245035450384503b4503045032450334503245033450
-011000001364500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005
+010100001475113751117510e7510d7510a7510875106751047510275101751007510075100701007010070100701007010070100701007010070100701007010070100701007010070100701007010070100701
 010500000364500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005
 00040000320501e050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010300000c6510c6510060100601006010060100601006010c6510c6510060100601006010060100601006010c6510c6510060100601006010060100601006010c6510c651006010060100601006010060100601
 __music__
 01 00034344
 00 00034344
