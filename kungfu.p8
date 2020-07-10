@@ -8,14 +8,14 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=true
+test_mode=false
 no_enemies=true
 show_enemy_bodies=true
 show_enemy_hitboxes=true
 show_player_body=true
 show_player_hitbox=true
 show_test_osd=true
-skip_cutscene=true
+skip_cutscene=false
 logfile="kungfu"
 
 -- constants
@@ -27,7 +27,9 @@ baseline=65
 boss_health=15
 enemy_strike_time=10
 gravity=2
-hit_time=10
+hit_time=2
+player_hit_time=5
+enemy_hit_time=2
 jump_max=8
 jump_force=2
 level_size=80
@@ -73,7 +75,7 @@ levels[2]={
 		{"dragon"}
 	}
 }
-current_level=2
+current_level=1
 
 palt(0,false)
 palt(12,true)
@@ -197,6 +199,7 @@ function debug(message)
 	printh(message,"kungfu")
 end
 
+-- draw a box shape
 function draw_box(box,c)
 	rectfill(
 		box.x,
@@ -299,12 +302,12 @@ function get_boss()
 	return false
 end
 
--- is even
+-- is number even
 function is_even(n)
 	return n%2==0
 end
 
--- is odd
+-- is number odd
 function is_odd(n)
 	return n%2==1
 end
@@ -328,11 +331,6 @@ end
 function pad(string,length)
   if (#string==length) return string
   return "0"..pad(string, length-1)
-end
-
--- process all collisions
-function process_collisions()
-	-- player strikes
 end
 
 -- random position (up,down)
@@ -496,7 +494,7 @@ function hurt_enemy(enemy,damage)
 	if enemy.hit==nil or enemy.hit<1 then
 		enemy.health-=damage
 		new_effect("enemy_hit",player.hitbox.x-2,player.hitbox.y)
-		enemy.hit=hit_time
+		enemy.hit=enemy_hit_time
 	end
 end
 
@@ -788,7 +786,7 @@ function new_stickguy(offset)
 		cooldown=0,
 		health=boss_health,
 		hit=0,
-		power=10,
+		power=5,
 	}
 	
 	if is_odd(current_level) then
@@ -925,7 +923,10 @@ function new_stickguy(offset)
 	
 end
 
+-------------------------------
 -- ball
+-------------------------------
+
 function new_ball(x)
 	if enemies==nil then
 		enemies={}
@@ -1000,7 +1001,10 @@ function new_ball(x)
 	add(enemies,ball)
 end
 
+-------------------------------
 -- dragon
+-------------------------------
+
 function new_dragon(x)
 
 	if enemies==nil then
@@ -1141,7 +1145,10 @@ function new_dragon(x)
 
 end
 
+-------------------------------
 -- snake
+-------------------------------
+
 function new_snake(offset)
 	
 	if enemies==nil then
@@ -1226,8 +1233,13 @@ function new_snake(offset)
 
 end
 	
+-------------------------------
 -- boomerang guy
+-------------------------------
+
 function new_boomerangguy(offset)
+	local throw_time=40
+	local cooldown_time=80
 	
 	if enemies==nil then
 		enemies={}
@@ -1249,8 +1261,7 @@ function new_boomerangguy(offset)
 		speed=1.5,
 		direction=right,
 		attack_height=up,
-		throw_time=20,
-		cooldown=20,
+		cooldown=0,
 	}
 	
 	if is_odd(current_level) then
@@ -1268,40 +1279,57 @@ function new_boomerangguy(offset)
 		end
 		
 		if self.state=="ready" then
+			local target
+			if player.x<self.x then
+				target=player.x+48
+				self.direction=left
+			else
+				target=player.x-48
+				self.direction=right
+			end
+			if self.x>target then
+				self.x-=1
+			elseif self.x<target then
+				self.x+=1
+			end
+			if self.x<min_x then
+				self.x=min_x
+			elseif self.x>max_x-16 then
+				self.x=max_x-16
+			end
+			if self.cooldown<1 then
+				self.attack_height=random_pos()
+				self.state="throwing1"
+				self.throwing=throw_time
+			else
+				self.cooldown-=1
+			end
 
-			local bcount=0
-			for projectile in all(projectiles) do
-				if projectile.kind=="boomerang" then
-					bcount+=1
+		elseif self.state=="throwing1" then
+			if self.throwing<1 then
+				self.attack_height=random_pos()
+				self.state="throwing2"
+				self.throwing=throw_time
+			else
+				if self.throwing==throw_time/2 then
+					new_boomerang(self)
 				end
-			end
-		
-			if bcount<2 and self.cooldown<1 then
-				self.cooldown=50
-				new_boomerang(self)
-			elseif self.cooldown>0 then
-				--[[
-				if self.x<player.x then
-					self.x+=self.speed
-				else
-					self.x-=self.speed
+				self.throwing-=1
+			end		
+			
+		elseif self.state=="throwing2" then
+			if self.throwing<1 then
+				self.state="ready"
+				self.cooldown=cooldown_time
+			else
+				if self.throwing==throw_time/2 then
+					new_boomerang(self)
 				end
-				]]
+				self.throwing-=1
 			end
 
-			self.cooldown-=1
-			if self.cooldown<0 then
-				self.cooldown=0
-			end
-				
-		elseif self.state=="dead" then
-			self.x+=self.direction*-1
-			self.y+=gravity
-			if self.y>camera_y+127 then
-				del(enemies,self)
-			end
 		end
-		
+						
 		self.body.x=self.x+4
 		self.body.y=self.y		
 		
@@ -1310,52 +1338,25 @@ function new_boomerangguy(offset)
 	boomerangguy.draw=function(self)
 		pal(1,8)
 		local sprite=128
-		if self.state=="walking" then
+		local flip_x=false
+		if self.state=="ready" then
 			sprite=128+anim_index*2
-		elseif self.state=="throwing" then
-			if self.throwing>=self.throw_time/2 then
-				sprite=132
-			else
+		elseif self.state=="throwing1" or
+				self.state=="throwing2" then
+			if self.throwing<throw_time/2 then
 				sprite=134
+			else
+				sprite=132
 			end
-			-- opposite (it changed)
-			if self.attack_height==up then
+			if self.attack_height==down then
 				sprite+=4
 			end
-		elseif self.state=="dead" then
-			sprite=140
 		end
-		local flip_x
-		if self.x<player.x then
-			flip_x=false
-		else
+		if self.direction==left then
 			flip_x=true
-		end
-		if sprite==132 or sprite==136 then
-			local x,y,sprite
-			if self.direction==right then
-				x=self.x-2
-			else
-				x=self.x+10
-			end	
-			if self.attack_height==up then
-				y=self.y-2
-				sprite=71
-			else
-				sprite=68
-				y=self.y+5
-			end
-			spr(sprite,x,y,1,1,not flip_x)
 		end
 		spr(sprite,self.x,self.y,2,2,flip_x)
 		
-		for boom in all(self.boomerangs) do
-			if boom.state=="flying" or
-					boom.state=="returning" then
-				spr(68,boom.x,boom.y,1,1,flip_x)
-			end
-		end
-
 	end
 
 	add(enemies,boomerangguy)
@@ -1450,7 +1451,7 @@ function new_player()
 	
 	player.hurt=function(self,damage)
 		if player.hit<1 then
-			self.hit=hit_time
+			self.hit=player_hit_time
 			self.health-=damage
 		end
 	end
@@ -1775,7 +1776,7 @@ function new_boomerang(th)
 		x=th.x,
 		y=th.y,
 		thrower=th,
-		position=up,
+		position=th.attack_position,
 		direction=th.direction,
 		speed=2,
 		state="throw",
@@ -1787,6 +1788,9 @@ function new_boomerang(th)
 			height=8
 		}
 	}
+	if th.attack_height==down then
+		boomerang.y+=8
+	end
 	boomerang.update=function(self)
 		self.rotation+=1
 		if self.rotation>3 then
@@ -1796,11 +1800,6 @@ function new_boomerang(th)
 			self.x+=self.direction*self.speed
 			if (self.direction==left and self.x<=camera_x+16) or
 					(self.direction==right and self.x>camera_x+111) then
-				if self.position==up then
-					self.y+=8
-				else
-					self.y-=8
-				end	
 				self.state="return"
 			end
 		elseif self.state=="return" then
@@ -1992,11 +1991,9 @@ function update_scores()
 	end
 end
 
--- ----------------------------
--- game modes
--- ----------------------------
-
+-------------------------------
 -- complete level program
+-------------------------------
 
 function mode_complete_init()
 	if is_odd(current_level) then
@@ -2031,7 +2028,9 @@ function mode_complete_draw()
 	draw_osd()
 end
 
+-------------------------------
 -- cut scene program
+-------------------------------
 
 function mode_cutscene_init()
 	cutscene_flash=false
@@ -2073,7 +2072,9 @@ function mode_cutscene_draw()
 	rectfill(0,104,127,127,0)
 end
 
+-------------------------------
 -- death program
+-------------------------------
 
 function mode_death_init()
 	music(-1)
@@ -2094,7 +2095,9 @@ function mode_death_draw()
 	draw_osd()
 end
 
+-------------------------------
 -- intro program
+-------------------------------
 
 function mode_intro_init()
 	init_player()
@@ -2122,7 +2125,9 @@ function mode_intro_draw()
 	draw_osd()
 end
 
+-------------------------------
 -- menu program
+-------------------------------
 
 function mode_menu_update()
 	if btn(4) and btn(5) then
@@ -2176,7 +2181,9 @@ function mode_menu_draw()
 	spr(77,110,68,1,2,true)
 end
 
+-------------------------------
 -- play (main) program
+-------------------------------
 
 function process_level()
 	local level=levels[current_level]
@@ -2212,7 +2219,7 @@ function mode_play_update()
 	local level=levels[current_level]
 	--debug(costatus(co_proc_lev))
 	if ticks%level.delay==0 then
-		if no_enemies==false then
+		if test_mode==false or no_enemies==false then
 			coresume(co_proc_lev)
 		end
 	end
@@ -2220,7 +2227,6 @@ function mode_play_update()
 	update_enemies()
 	player:update()
 	update_projectiles()
-	process_collisions()
 	update_scores()
 	update_camera()
 	level_timer-=0.5
@@ -2237,7 +2243,9 @@ function mode_play_draw()
 	draw_osd()
 end
 
+-------------------------------
 -- start program
+-------------------------------
 
 function mode_start_init()
 	level_timer=2000
@@ -2269,7 +2277,9 @@ function mode_start_draw()
 	draw_osd()
 end
 
+-------------------------------
 -- tally program
+-------------------------------
 
 function mode_tally_init()
 end
