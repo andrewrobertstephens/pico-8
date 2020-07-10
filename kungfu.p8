@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 27
+version 29
 __lua__
 -- ===================
 -- kung fu
@@ -14,6 +14,7 @@ show_enemy_bodies=true
 show_enemy_hitboxes=true
 show_player_body=true
 show_player_hitbox=true
+show_test_osd=true
 skip_cutscene=true
 logfile="kungfu"
 
@@ -26,8 +27,9 @@ baseline=65
 boss_health=15
 enemy_strike_time=10
 gravity=2
-hurt_time=5
-jump_max=10
+hit_time=10
+jump_max=8
+jump_force=2
 level_size=80
 strike_duration=8
 strike_contact=6
@@ -43,6 +45,7 @@ enemy_group_counter=0
 boss_threshold=64
 
 -- globals
+anim_index=0
 min_x=0
 max_x=level_size*8-1
 levels={}
@@ -91,6 +94,12 @@ end
 
 function _update()
 	ticks=ticks+1
+	if ticks%3==0 then
+		anim_index+=1
+		if anim_index>1 then
+			anim_index=0
+		end
+	end
 	if game_mode=="menu" then
 		mode_menu_update()
 	elseif game_mode=="intro" then
@@ -229,15 +238,23 @@ function draw_osd()
   end
   return 0
  end
-	function draw_osd_level(x,y)
+	function draw_osd_level(sx,y)
 		for i=1,3 do
 			local c=12
-			if i==current_level then
-				c=9
+			local x=(i-1)*12+sx
+			if i<current_level then
+				print("█",x,y,9)
+			elseif i==current_level then
+				if anim_index==0 then
+					print("█",x,y,9)
+				else
+					print("█",x,y,12)
+				end
+			else
+				print("█",x,y,12)
 			end
-			print("█",(i-1)*12+x,y,c)
 			if i<3 then
-				print("-",(i-1)*12+x+8,y,9)
+				print("-",x+8,y,9)
 			end
 		end	
 	end
@@ -260,9 +277,26 @@ function draw_osd()
 	print(pad(""..player.score,6),x+91,y,7)
 	print("time:"..flr(level_timer),x+85,y+8,7)
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
-	if enemies~=nil then
-		--debug(#enemies)
+	if test_mode and show_test_osd then
+		cursor(camera_x+2,camera_y+107)
+		--print("game_mode="..game_mode,7)
+		--print("current_level="..current_level,7)
+		--cursor(camera_x+60,camera_y+107)
+		local boss=get_boss()
+		if boss then
+			print("boss.state="..boss.state,7)
+		end
 	end
+end
+
+-- get boss
+function get_boss()
+	for en in all(enemies) do
+		if en.boss then
+			return en
+		end
+	end
+	return false
 end
 
 -- is even
@@ -298,73 +332,16 @@ end
 
 -- process all collisions
 function process_collisions()
-	-- body collisions
-	--[[
-	for enemy in all(enemies) do
-		if collision(enemy.body,player.body) then
-			if enemy.kind=="grabguy" then
-				if enemy.grabbing==false then
-					player.grabbed=3
-					player.jump_dir=0
-					enemy.grabbing=true
-				end
-			elseif enemy.kind==snake then
-				player.health-=enemy.power
-				player.hurt=hurt_time
-			end
-		end
-	end
-	]]
-	-- enemy strikes
-	--[[
-	for enemy in all(enemies) do
-		if collision(enemy.hitbox,player.body) then
-			if enemy.kind=="stick_guy" then
-				if	enemy.swinging==1 then
-					player.health-=enemy.power
-					player.hurt=hurt_time
-					new_effect("player_hit",enemy.hitbox.x,enemy.hitbox.y)
-				end
-			end
-		end
-	end
-	]]
-
-	-- projectile collisions
-	for projectile in all(projectiles) do
-		if collision(projectile.body,player.body) then
-			player.hurt=hurt_time
-			player.health-=10
-			new_effect("player_hit",projectile.x,projectile.y)
-			if projectile.kind~=nil and 
-					projectile.kind~="boomerang" then
-				del(projectiles,projectile)
-			end
-		end
-	end
-
 	-- player strikes
-	for enemy in all(enemies) do
-		if collision(player.hitbox,enemy.body) then
-			if is_climax(player.punching) or
-					is_climax(player.kicking) then	
-				new_effect(
-					"enemy_hit",
-					player.hitbox.x-2,
-					player.hitbox.y
-				)
-				player.strike_hit=3
-				enemy.health-=1
-				enemy.multiplier=1
-				if enemy.boss==false and
-						player.punching==9 then
-					enemy.multiplier=2
-				end
-				sfx(-1)
-				sfx(10)
-			end
-		end
+end
+
+-- random position (up,down)
+function random_pos()
+	local n=flr(rnd(2))
+	if n==0 then
+		return up
 	end
+	return down
 end
 
 -- input for test mode
@@ -385,6 +362,29 @@ function test_input()
 		if num~=nil then
 			local en=ens[num]
 			new_enemy(en)
+		end
+		if key=="<" then
+			player.x=min_x+64
+		end
+		if key==">" then
+			player.x=max_x-80
+		end
+		if key=="a" then
+			local boss=get_boss()
+			if boss then
+				boss.state="ready"
+			end
+		end
+		if key=="b" then
+			show_enemy_bodies=not show_enemy_bodies
+			show_player_body=not show_player_body
+		end
+		if key=="e" then
+			no_enemies=not no_enemies
+		end
+		if key=="h" then
+			show_enemy_hitboxes=not show_enemy_hitboxes
+			show_player_hitbox=not show_player_hitbox
 		end
 	end
 end
@@ -464,7 +464,8 @@ function update_enemies()
 		if enemy.state=="dead" and
 				enemy.scored==false then
 			player.score+=enemy.value
-			player.scored=true
+			enemy.scored=true
+			new_score(enemy.x,enemy.y,enemy.value)
 		end
 	end
 end
@@ -489,6 +490,15 @@ end
 -------------------------------
 -- enemies 2
 -------------------------------
+
+-- hurt an enemy
+function hurt_enemy(enemy,damage)
+	if enemy.hit==nil or enemy.hit<1 then
+		enemy.health-=damage
+		new_effect("enemy_hit",player.hitbox.x-2,player.hitbox.y)
+		enemy.hit=hit_time
+	end
+end
 
 -- catchall function
 function new_enemy(kind,offset)
@@ -523,7 +533,6 @@ function new_grabguy(offset)
 		kind="grabguy",
 		y=baseline,
 		state="walking",
-		anim=0,
 		value=100,
 		body={
 			x=0,
@@ -531,6 +540,7 @@ function new_grabguy(offset)
 			width=8,
 			height=16
 		},
+		hit=0,
 		health=1,
 		speed=1.25,
 		direction=right,
@@ -546,20 +556,18 @@ function new_grabguy(offset)
 	else
 		grabguy.x=camera_x+127+offset
 	end
-	
+
 	grabguy.update=function(self)
+		self.hit-=1
+		if self.hit<1 then
+			self.hit=0
+		end
 		self.body.x=grabguy.x+4
 		self.body.y=grabguy.y
 		if self.health<=0 then
 			self.state="dead"
 		end
 		if self.state=="walking" then	
-			if ticks%3==0 then
-				self.anim+=1
-				if self.anim>1 then
-					self.anim=0
-				end
-			end
 			if self.x<player.x then
 				self.direction=right
 				self.x+=self.speed
@@ -586,7 +594,7 @@ function new_grabguy(offset)
 		local sprite
 		local flip_x
 		if grabguy.state=="walking" then
-			sprite=100+grabguy.anim*2
+			sprite=100+anim_index*2
 		elseif grabguy.state=="grabbing" then
 			sprite=104
 		elseif grabguy.state=="dead" or
@@ -615,6 +623,7 @@ function new_knifeguy(offset)
 	local knifeguy={
 		y=baseline,
 		health=2,
+		hit=0,
 		state="walking",
 		value=200,
 		scored=false,
@@ -624,11 +633,12 @@ function new_knifeguy(offset)
 			width=8,
 			height=16,
 		},
-		anim=0,
 		speed=1.5,
 		direction=right,
 		attack_height=up,
-		throw_time=20
+		throw_time=20,
+		cool_time=50,
+		cooldown=0,
 	}
 	
 	if offset==nil then
@@ -642,6 +652,10 @@ function new_knifeguy(offset)
 	end
 	
 	knifeguy.update=function(self)
+		self.hit-=1
+		if self.hit<1 then
+			self.hit=0
+		end
 		if self.health<=0 then
 			self.state="dead"
 		end
@@ -651,18 +665,12 @@ function new_knifeguy(offset)
 		local window=8
 		if self.x<player.x then
 			self.direction=right
-			target=player.x-16
+			target=player.x-32
 		else
 			self.direction=left
-			target=player.x+15+16
+			target=player.x+32
 		end
 		if self.state=="walking" then
-			if ticks%3==0 then
-				self.anim+=1
-				if self.anim>1 then
-					self.anim=0
-				end
-			end
 			if self.x<target-8 then
 				self.direction=right
 				self.state="walking"
@@ -674,7 +682,6 @@ function new_knifeguy(offset)
 			else
 				self.state="throwing"
 				self.throwing=self.throw_time
-				self.cooldown=50
 			end
 		elseif self.state=="throwing" then
 			-- time of release
@@ -689,7 +696,7 @@ function new_knifeguy(offset)
 				new_knife(self.x,y,self.direction*2)
 			elseif self.throwing<1 then
 				self.state="cooldown"
-				self.cooldown=10
+				self.cooldown=self.cool_time
 			end
 			self.throwing-=1
 		elseif self.state=="cooldown" then
@@ -710,7 +717,7 @@ function new_knifeguy(offset)
 		pal(1,1)
 		local sprite=128
 		if self.state=="walking" then
-			sprite=128+self.anim*2
+			sprite=128+anim_index*2
 		elseif self.state=="throwing" then
 			if self.throwing>=self.throw_time/2 then
 				sprite=132
@@ -718,7 +725,7 @@ function new_knifeguy(offset)
 				sprite=134
 			end
 			-- opposite (it changed)
-			if self.attack_height==up then
+			if self.attack_height==down then
 				sprite+=4
 			end
 		elseif self.state=="dead" then
@@ -760,6 +767,7 @@ function new_stickguy(offset)
 
 	local stickguy={
 		kind="stickguy",
+		boss=true,
 		y=baseline,
 		body={
 			x=0,
@@ -774,12 +782,13 @@ function new_stickguy(offset)
 			height=4
 		},
 		state="waiting",
-		anim=0,
 		chain=0,
 		swinging=0,
 		speed=1.5,
 		cooldown=0,
 		health=boss_health,
+		hit=0,
+		power=10,
 	}
 	
 	if is_odd(current_level) then
@@ -791,6 +800,10 @@ function new_stickguy(offset)
 	end
 	
 	stickguy.update=function(self)
+		self.hit-=1
+		if self.hit<1 then
+			self.hit=0
+		end
 		if self.health<=0 then
 			self.state="dead"
 		end
@@ -804,13 +817,9 @@ function new_stickguy(offset)
 		if self.position==down then
 			self.hitbox.y=self.y+8		
 		end
-		if self.state=="walking" then
-			if ticks%3==0 then
-				self.anim+=1
-				if self.anim>1 then
-					self.anim=0
-				end
-			end
+		if self.state=="ready" then
+			self.state="walking"
+		elseif self.state=="walking" then
 			if self.cooldown>0 then
 				self.x+=self.speed*self.direction*-1
 				self.cooldown-=1
@@ -860,12 +869,16 @@ function new_stickguy(offset)
 		end
 		self.body.x=self.x+4
 		self.body.y=self.y
+		if collision(self.hitbox,player.body) then
+			player:hurt(self.power)
+			new_effect("player_hit",self.hitbox.x,self.hitbox.y)
+		end
 	end
 	
 	stickguy.draw=function(self)
 		local sprite=160
 		if self.state=="walking" then
-			sprite=160+self.anim*2
+			sprite=160+anim_index*2
 		elseif self.state=="swinging" then
 			if self.swinging>enemy_strike_time/2 then
 				if self.position==up then
@@ -922,14 +935,15 @@ function new_ball(x)
 		y=0,
 		state="falling",
 		countdown=50,
-		anim=0,
+		power=10,
 		body={
 			x=0,
 			y=0,
 			width=8,
 			height=8,
 		},
-		health=1
+		health=1,
+		value=500
 	}
 	ball.x=flr(rnd(64))+camera_x+32
 	ball.update=function(self)
@@ -938,12 +952,6 @@ function new_ball(x)
 			del(enemies,self)
 		end
 		local dest_y=camera_y+48
-		if ticks%3==0 then
-			self.anim+=1
-			if self.anim>1 then
-				self.anim=0
-			end
-		end
 		if self.state=="falling" then
 			self.y+=gravity
 			if self.y>dest_y then
@@ -953,7 +961,7 @@ function new_ball(x)
 				self.start_y=ball.y
 			end
 		elseif self.state=="countdown" then
-			if self.anim==0 then
+			if anim_index==0 then
 				self.x=ball.start_x
 				self.y=ball.start_y
 			else
@@ -979,6 +987,11 @@ function new_ball(x)
 		end
 		self.body.x=ball.x
 		self.body.y=ball.y
+		if collision(self.body,player.body) then
+			player:hurt(self.power)
+			new_effect("break",self.x,self.y)
+			del(enemies,self)
+		end
 	end
 	ball.draw=function(self)
 		sprite=124
@@ -1003,18 +1016,29 @@ function new_dragon(x)
 		health=1,
 		idle_count=10,
 		breath_count=10,
+		breathing=0,
+		power=5,
 		body={
 			x=0,
 			y=0,
 			width=8,
 			height=16
+		},
+		hitbox={
+			x=0,
+			y=0,
+			width=16,
+			height=8
 		}
 	}
 	dragon.x=flr(rnd(64))+camera_x+32
 	dragon.update=function(self)
-		self.body.x=self.x
-		self.body.y=self.y
 		local bottom=baseline
+		if self.x<player.x then
+			self.direction=right
+		else
+			self.direction=left
+		end
 		if self.state=="falling" then
 			self.body.y=self.y+8
 			self.y+=gravity
@@ -1033,23 +1057,17 @@ function new_dragon(x)
 		elseif self.state=="idle" then
 			if self.idle_count<1 then
 				self.state="breathing"
-				local x
-				local xs
-				if self.x<player.x then
-					x=self.x+13
-					xs=1
-				else
-					x=self.x-16
-					xs=-1
-				end
-				new_fire(x,self.y,xs)
+				self.breathing=20
 			end
 			self.idle_count-=1
 		elseif self.state=="breathing" then
-			if self.breath_count<1 then
+			if collision(self.hitbox,player.body) then
+				player:hurt(self.power)
+			end
+			if self.breathing<1 then
 				self.state="disappearing"
 			end
-			self.breath_count-=1			
+			self.breathing-=1
 		elseif self.state=="disappearing" then
 			if ticks%3==0 then
 				self.anim-=1
@@ -1068,9 +1086,23 @@ function new_dragon(x)
 				self.state="disappearing"
 			end
 		end
+		self.body.x=self.x
+		self.body.y=self.y
+		if self.direction==left then
+			self.hitbox.x=self.x-16
+		else
+			self.hitbox.x=self.x+8
+		end
+		self.hitbox.y=self.y
 	end
 	
 	dragon.draw=function(self)
+		local flip_x
+		if self.x<player.x then
+			flip_x=false
+		else
+			flip_x=true
+		end
 		local sprite=72
 		if self.state=="falling" then
 			sprite=72
@@ -1094,11 +1126,8 @@ function new_dragon(x)
 		elseif self.state=="breathing" then
 			sprite=77
 		end
-		local flip_x
-		if self.x<player.x then
-			flip_x=false
-		else
-			flip_x=true
+		if self.breathing>0 then
+			spr(108,self.hitbox.x,self.hitbox.y,2,1,flip_x)
 		end
 		if test_mode and show_enemy_bodies then
 			draw_box(self.body,10)
@@ -1123,10 +1152,10 @@ function new_snake(offset)
 		kind="snake",
 		y=camera_y-8,
 		speed=2,
-		anim=0,
 		health=1,
 		breaking=0,
 		state="falling",
+		power=10,
 		body={
 			x=x,
 			y=camera_y-8,
@@ -1137,42 +1166,42 @@ function new_snake(offset)
 
 	snake.x=flr(rnd(64))+camera_x+32
 	
-	snake.update=function(snake)
-		local enemy=snake
+	snake.update=function(self)
 		local bottom=baseline+8
-		if ticks%3==0 then
-			enemy.anim+=1
-			if enemy.anim>1 then
-				enemy.anim=0
-			end
-		end
-		if enemy.state=="falling" then
-			enemy.y+=gravity
-			if enemy.y>bottom then
+		if self.state=="falling" then
+			self.y+=gravity
+			if self.y>bottom then
 				sfx(11)
-				enemy.y=bottom
-				enemy.state="breaking"
-				enemy.breaking=5
+				self.y=bottom
+				self.state="breaking"
+				self.breaking=5
 			end
-		elseif enemy.state=="breaking" then
-			enemy.breaking-=1
-			if enemy.breaking<1 then
-				enemy.state="active"
+		elseif self.state=="breaking" then
+			self.breaking-=1
+			if self.breaking<1 then
+				self.state="active"
 			end
-		elseif enemy.state=="active" then
-			if enemy.locked_direction==nil then
-				if enemy.x<player.x then
-					enemy.locked_direction=right
+		elseif self.state=="active" then
+			if self.locked_direction==nil then
+				if self.x<player.x then
+					self.locked_direction=right
 				else
-					enemy.locked_direction=left
+					self.locked_direction=left
 				end
 			end
-			enemy.x+=enemy.speed*enemy.locked_direction
+			self.x+=self.speed*self.locked_direction
 		end		
-		enemy.body.x=enemy.x
-		enemy.body.y=enemy.y
-		enemy.body.width=8
-		enemy.body.height=8
+		self.body.x=self.x
+		self.body.y=self.y
+		self.body.width=8
+		self.body.height=8
+		if collision(self.body,player.body) then
+			player:hurt(self.power)
+			if self.state=="falling" then
+				new_effect("break",self.x,self.y)
+				del(enemies,self)
+			end
+		end
 	end
 	
 	snake.draw=function(snake)
@@ -1182,16 +1211,13 @@ function new_snake(offset)
 		elseif snake.state=="breaking" then
 			sprite=111
 		elseif snake.state=="active" then
-			sprite=126+snake.anim		
+			sprite=126+anim_index
 		end
 		local flip_x
 		if snake.locked_direction==left then
 			flip_x=true
 		else
 			flip_x=false
-		end
-		if test_mode and show_enemy_bodies then
-			draw_box(snake.body,15)
 		end
 		spr(sprite,snake.x,snake.y,1,1,flip_x)
 	end
@@ -1200,7 +1226,7 @@ function new_snake(offset)
 
 end
 	
--- knife guy
+-- boomerang guy
 function new_boomerangguy(offset)
 	
 	if enemies==nil then
@@ -1208,21 +1234,23 @@ function new_boomerangguy(offset)
 	end
 	
 	local boomerangguy={
+		boss=true,
 		x=x,
 		y=baseline,
 		health=boss_health,
 		state="waiting",
+		throwing=0,
 		body={
 			x=0,
 			y=0,
 			width=8,
 			height=16,
 		},
-		anim=0,
 		speed=1.5,
 		direction=right,
 		attack_height=up,
-		throw_time=20
+		throw_time=20,
+		cooldown=20,
 	}
 	
 	if is_odd(current_level) then
@@ -1234,85 +1262,56 @@ function new_boomerangguy(offset)
 	end
 	
 	boomerangguy.update=function(self)
+
 		if self.health<=0 then
 			self.state="dead"
 		end
-		self.body.x=self.x+4
-		self.body.y=self.y
-		if self.state=="walking" then
-			local target
-			local window=4
-			if self.x<player.x then
-				self.direction=right
-				target=player.x-32
-			else
-				self.direction=left
-				target=player.x+47
-			end
-			if ticks%3==0 then
-				self.anim+=1
-				if self.anim>1 then
-					self.anim=0
+		
+		if self.state=="ready" then
+
+			local bcount=0
+			for projectile in all(projectiles) do
+				if projectile.kind=="boomerang" then
+					bcount+=1
 				end
 			end
-			if self.x<target-window then
-				self.direction=right
-				self.state="walking"
-				self.x+=self.speed
-			elseif self.x>target+window then
-				self.direction=left
-				self.state="walking"
-				self.x-=self.speed
-			else
-				self.state="throwing"
-				self.throwing=self.throw_time
+		
+			if bcount<2 and self.cooldown<1 then
 				self.cooldown=50
-			end
-			-- stay on screen
-			if self.x>max_x-16 then
-				self.x=max_x-16
-				self.state="throwing"
-			elseif self.x<min_x then
-				self.x=min_x
-				self.state="throwing"
-			end
-		elseif self.state=="throwing" then
-			-- time of release
-			if self.throwing==self.throw_time/2 then
-				local y=self.y-2
-				local attack_height=self.attack_height
-				if self.attack_height==down then
-					y+=10
-					self.attack_height=up
+				new_boomerang(self)
+			elseif self.cooldown>0 then
+				--[[
+				if self.x<player.x then
+					self.x+=self.speed
 				else
-					self.attack_height=down
+					self.x-=self.speed
 				end
-				new_boomerang(self.x,y,attack_height,self.direction,self)
-				--new_knife(self.x,y,self.direction*2)
-			elseif self.throwing<1 then
-				self.state="cooldown"
-				self.cooldown=10
+				]]
 			end
-			self.throwing-=1
-		elseif self.state=="cooldown" then
-			if self.cooldown<1 then
-				self.state="walking"
-			end
+
 			self.cooldown-=1
+			if self.cooldown<0 then
+				self.cooldown=0
+			end
+				
 		elseif self.state=="dead" then
 			self.x+=self.direction*-1
 			self.y+=gravity
 			if self.y>camera_y+127 then
 				del(enemies,self)
 			end
-		end		
+		end
+		
+		self.body.x=self.x+4
+		self.body.y=self.y		
+		
 	end
 	
 	boomerangguy.draw=function(self)
-		pal(1,3)
+		pal(1,8)
 		local sprite=128
 		if self.state=="walking" then
-			sprite=128+self.anim*2
+			sprite=128+anim_index*2
 		elseif self.state=="throwing" then
 			if self.throwing>=self.throw_time/2 then
 				sprite=132
@@ -1349,12 +1348,19 @@ function new_boomerangguy(offset)
 			spr(sprite,x,y,1,1,not flip_x)
 		end
 		spr(sprite,self.x,self.y,2,2,flip_x)
+		
+		for boom in all(self.boomerangs) do
+			if boom.state=="flying" or
+					boom.state=="returning" then
+				spr(68,boom.x,boom.y,1,1,flip_x)
+			end
+		end
+
 	end
 
 	add(enemies,boomerangguy)
 
 end
-
 
 -- ----------------------------
 -- player
@@ -1373,8 +1379,8 @@ function new_player()
 		punching=0,
 		hurt=0,
 		speed=1,
-		w_index=0,
 		state="normal",
+		hit=0,
 		old_input={
 			x=0,
 			y=0,
@@ -1402,6 +1408,26 @@ function new_player()
 		player.x=0
 		player.direction=right
 	end
+
+	player.collisions=function(self)	
+		for enemy in all(enemies) do
+			if collision(self.body,enemy.body) then
+				self.jump_dir=0
+			end
+			if collision(self.hitbox,enemy.body) and
+					#player.grabbers==0 then
+				if is_climax(player.punching) or
+						is_climax(player.kicking) then	
+					hurt_enemy(enemy,1)
+					if enemy.boss then
+						enemy.x-=enemy.direction
+					end
+					sfx(-1)
+					sfx(10)
+				end
+			end
+		end
+	end
 	
 	player.init=function(self,direction)
 		self.direction=direction
@@ -1417,11 +1443,18 @@ function new_player()
 		self.jumping=0
 		self.kicking=0
 		self.punching=0
-		self.hurt=0
-		self.w_index=0
 		self.state="normal"
+		self.hit=0
+		self.stepping=false
 	end
 	
+	player.hurt=function(self,damage)
+		if player.hit<1 then
+			self.hit=hit_time
+			self.health-=damage
+		end
+	end
+
 	player.update_complete=function(self)
 		self.stepping=false
 		if (is_even(current_level) and self.x<max_x) or
@@ -1432,22 +1465,18 @@ function new_player()
 		else
 			self.walking=false
 			self.stepping=true
+			--[[
 			if self.w_index==1 then
 				self.x+=complete_direction*2
 				self.y-=2
 			end
+			]]
 		end
 	end
 	
 	player.update_cutscene=function(self)
 		self.state="normal"
 		self.walking=true
-		if ticks%3==0 then
-			self.w_index+=1
-			if self.w_index>1 then
-				self.w_index=0
-			end
-		end
 	end
 
 	player.update_death=function(self)
@@ -1463,17 +1492,16 @@ function new_player()
 	end
 
 	player.update_start=function(self)
-		if ticks%3==0 then
-			self.w_index+=1
-			if self.w_index>1 then
-				self.w_index=0
-			end
-		end
 		self.walking=true
 		self.x+=player.speed*player.direction
 	end
 	
 	player.update=function(self)
+		
+		player.hit-=1
+		if player.hit<1 then
+			player.hit=0
+		end
 		
 		-- always apply gravity
 		self.y+=gravity
@@ -1481,31 +1509,6 @@ function new_player()
 			self.y=baseline
 		end
 		
-		-- always update body
-		self.body.x=self.x+4
-		self.body.y=self.y
-		if self.position==down then
-			self.body.y=self.y+8
-		end
-		
-		-- always update hitbox
-		--update_hitbox(self)
-			
-		self.hitbox.x=self.x
-		self.hitbox.y=self.y
-		self.hitbox.width=4
-		self.hitbox.height=4
-		if self.direction==left then
-			self.hitbox.x=self.x-2
-		else
-			self.hitbox.x=self.x+14
-		end
-		if self.position==down then
-			self.hitbox.y=self.y+8		
-		end
-		if (self.jumping>0 and self.kicking>0) then
-			self.hitbox.height=16
-		end
 
 		-- update striking
 	
@@ -1518,8 +1521,8 @@ function new_player()
 		end
 				
 		-- update hurt
-		if self.hurt>0 then
-			self.hurt-=1
+		if self.hit>0 then
+			self.hit-=1
 		end
 		
 		if self.grabbed>0 then
@@ -1557,12 +1560,6 @@ function new_player()
 		end
 		
 		if self.state=="normal" then
-			if ticks%3==0 then
-				self.w_index+=1
-				if self.w_index>1 then
-					self.w_index=0
-				end
-			end
 			if input.x~=0 then
 				self.direction=input.x
 				if #self.grabbers>0 then
@@ -1604,7 +1601,7 @@ function new_player()
 			-- update jumping
 			if self.jumping>0 then
 				self.jumping-=1
-				self.y-=gravity*2
+				self.y-=gravity*jump_force
 				self.x+=self.jump_dir
 			else
 				self.state="falling"
@@ -1617,6 +1614,35 @@ function new_player()
 			end					
 		end
 				
+		-- always update body
+		self.body.x=self.x+4
+		self.body.y=self.y
+		if self.position==down then
+			self.body.y=self.y+8
+		end
+		
+		-- always update hitbox
+		--update_hitbox(self)
+			
+		self.hitbox.x=self.x
+		self.hitbox.y=self.y
+		self.hitbox.width=4
+		self.hitbox.height=4
+		if self.direction==left then
+			self.hitbox.x=self.x-2
+		else
+			self.hitbox.x=self.x+14
+		end
+		if self.position==down then
+			self.hitbox.y=self.y+8		
+		end
+		if (self.jumping>0 and self.kicking>0) then
+			self.hitbox.height=16
+		end
+
+
+		self:collisions()
+
 		self.old_input=input
 			
 	end
@@ -1639,8 +1665,12 @@ function new_player()
  	 			sprite=34
 	  		end
  	 	end
+ 	 elseif self.hit>0 then
+ 	 	sprite=36
+			elseif self.stepping then
+				sprite=4+anim_index*2
 			elseif self.walking then
-				sprite=self.w_index*2
+				sprite=anim_index*2
  	 else
 				if player.kicking>0 then
 					sprite=10
@@ -1736,17 +1766,17 @@ end
 -- projectiles
 -- ----------------------------
 
-function new_boomerang(x,y,pos,dr,th)
+function new_boomerang(th)
 	if projectiles==nil then
 		projectiles={}
 	end
 	local boomerang={
 		kind="boomerang",
-		x=x,
-		y=y,
+		x=th.x,
+		y=th.y,
 		thrower=th,
-		position=pos,
-		direction=dr,
+		position=up,
+		direction=th.direction,
 		speed=2,
 		state="throw",
 		rotation=0,
@@ -1758,8 +1788,6 @@ function new_boomerang(x,y,pos,dr,th)
 		}
 	}
 	boomerang.update=function(self)
-		self.body.x=self.x
-		self.body.y=self.y
 		self.rotation+=1
 		if self.rotation>3 then
 			self.rotation=0
@@ -1782,7 +1810,10 @@ function new_boomerang(x,y,pos,dr,th)
 				del(projectiles,self)
 			end			
 		end				
+		self.body.x=self.x
+		self.body.y=self.y
 	end
+	
 	boomerang.draw=function(self)
 		local flip_x
 		if self.direction<0 then
@@ -1797,7 +1828,7 @@ end
 
 function new_fire(x,y,xs)
 	if projectiles==nil then
-		projectils={}
+		projectiles={}
 	end
 	local fire={
 		x=x,
@@ -1833,6 +1864,7 @@ function new_knife(x,y,xs)
 		x=x,
 		y=y,
 		xs=xs,
+		power=10,
 		body={
 			x=x,
 			y=y,
@@ -1869,6 +1901,7 @@ function new_shard(x,y,xs,ys)
 		y=y,
 		xs=xs,
 		ys=ys,
+		power=10,
 		body={
 			x=x,
 			y=y,
@@ -1903,6 +1936,14 @@ end
 function update_projectiles()
 	for projectile in all(projectiles) do
 		projectile:update()
+		if collision(projectile.body,player.body) then
+			player:hurt(10)
+			new_effect("player_hit",projectile.x,projectile.y)
+			del(projectiles,projectile)
+			if projectile.kind~=nil and 
+					projectile.kind~="boomerang" then
+			end
+		end
 	end
 end
 
@@ -2148,7 +2189,7 @@ function process_level()
 				local offset=i*level.offset
 				if (is_odd(current_level) and player.x<max_x*0.25) or
 						(is_even(current_level) and player.x>max_x*0.75) then
-					boss.state="walking"
+					boss.state="ready"
 				else
 					new_enemy(en,offset)
 				end
@@ -2171,7 +2212,9 @@ function mode_play_update()
 	local level=levels[current_level]
 	--debug(costatus(co_proc_lev))
 	if ticks%level.delay==0 then
-		coresume(co_proc_lev)
+		if no_enemies==false then
+			coresume(co_proc_lev)
+		end
 	end
 	update_effects()
 	update_enemies()
