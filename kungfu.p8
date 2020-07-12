@@ -16,7 +16,6 @@ show_player_body=true
 show_player_hitbox=true
 show_test_osd=true
 skip_cutscene=true
-logfile="kungfu"
 
 -- constants
 left=-1
@@ -29,7 +28,7 @@ enemy_strike_time=10
 gravity=2
 hit_time=2
 player_hit_time=5
-enemy_hit_time=2
+enemy_hit_time=5
 jump_max=8
 jump_force=2
 level_size=100
@@ -50,10 +49,12 @@ snd_count=14
 snd_boomerang=15
 snd_walking=8
 
+--[[
 enemy_group_counter=0
 enemy_counter=0
 enemy_group_counter=0
 boss_threshold=64
+]]
 
 -- globals
 anim_index=0
@@ -92,17 +93,33 @@ levels[2]={
 	}
 }
 levels[3]={
-	boss="boomerangguy",
+	boss="bigguy",
 	delay=50,
 	offset=8,
 	sequences={
 		{
 			{"grabguy","grabguy","grabguy"},
-			{"snake","knifeguy"},
+			{"snake"},
 		}
 	}	
 }
-current_level=1
+levels[4]={
+	boss="magician",
+	delay=100,
+	offset=8,
+	nests={
+		{offset=100,height=64},
+		{offset=120,height=64},
+		{offset=140,height=64},
+		{offset=160,height=64},
+	},
+	sequences={
+		{},
+		{"grabguy","grabguy","grabguy"}
+	}
+}
+
+current_level=4
 
 palt(0,false)
 palt(12,true)
@@ -143,7 +160,6 @@ function _update()
 	elseif game_mode=="cutscene" then
 		cutscene_mode:update()
 	end
-	last_time=current_time
 end
 
 function _draw()
@@ -208,8 +224,7 @@ function collision(r1,r2)
 			y2=r.y+r.height-1,
 		}
 	end
-	local rect1=parse_rect(r1)
-	local rect2=parse_rect(r2)
+	local rect1,rect2=parse_rect(r1),parse_rect(r2)
 	return rect1.x1<rect2.x2 and
   rect1.x2>rect2.x1 and
   rect1.y1<rect2.y2 and
@@ -236,7 +251,7 @@ end
 function draw_level()
 	-- draw level
 	for i=-6,level_size/16+6 do
-		local x=i*8*16
+		local x=i*128
 		if current_level==1 then
 			map(0,0,x,24,16,10)
 		else
@@ -248,7 +263,7 @@ function draw_level()
 		if is_even(current_level) then
 			spr(81,max_x+48-i*8,33+i*8,1,1,true)
 		else
-			spr(81,-48+i*8,33+i*8,1,1)
+			spr(81,-48+i*8,33+i*8)
 		end
 	end
 end
@@ -256,11 +271,10 @@ end
 -- draw the osd
 function draw_osd()
  function get_boss_health()
-  for enemy in all(enemies) do
-   if enemy.boss then
-    return enemy.health/boss_health
-   end
-  end
+ 	local boss=get_boss()
+ 	if boss then
+ 		return boss.health/boss_health
+ 	end
   return 0
  end
 	function draw_osd_level(sx,y)
@@ -269,17 +283,10 @@ function draw_osd()
 			local x=(i-1)*8+sx
 			if i<current_level then
 				print("█",x,y,9)
-			elseif i==current_level then
-				if anim_index==0 then
-					print("█",x,y,9)
-				else
-					print("█",x,y,12)
-				end
+			elseif i==current_level and anim_index==0 then
+				print("█",x,y,9)
 			else
 				print("█",x,y,12)
-			end
-			if i<5 then
-				print("-",x+8,y,9)
 			end
 		end	
 	end
@@ -298,22 +305,16 @@ function draw_osd()
 	print(' enemy',x,y+8,8)
 	health_bar(x+25,y+8,get_boss_health(),8)	
 	draw_osd_level(x+50,y)
-	print("-"..player.lives,x+55,y+8,7)
+	color(7)
+	print("-"..player.lives,x+55,y+8)
 	spr(246,x+48,y+7,1,1)
-	print(pad(""..player.score,6),x+97,y,7)
-	print("time:"..flr(level_timer),x+85,y+8,7)
+	print(pad(""..player.score,6),x+97,y)
+	print("time:"..flr(level_timer),x+85,y+8)
 	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 	if test_mode and show_test_osd then
 		cursor(camera_x+2,camera_y+107)
 		print("game_mode="..game_mode,7)
-		--print("current_level="..current_level,7)
-		--cursor(camera_x+60,camera_y+107)
-		--[[
-		local boss=get_boss()
-		if boss then
-			print("boss.state="..boss.state,7)
-		end
-		]]
+		print("enemies="..#enemies,7)
 	end
 end
 
@@ -345,10 +346,9 @@ end
 
 -- is object offscreen?
 function is_offscreen(r)
-	local cx=camera_x
 	return 
-			(r.direction==left and r.x<cx-r.tile_width*8) or
-			(r.direction==right and r.x>cx+127+r.tile_width*8) or
+			(r.direction==left and r.x<camera_x-r.tile_width*8) or
+			(r.direction==right and r.x>camera_x+127+r.tile_width*8) or
 			r.y>127
 end
 
@@ -360,12 +360,11 @@ end
 
 -- place boss at end of level
 function place_boss(boss)
+	boss.x=max_x-32
+	boss.direction=left
 	if is_odd(current_level) then
 		boss.x=min_x+16
 		boss.direction=right
-	else
-		boss.x=max_x-32
-		boss.direction=left
 	end	
 end
 
@@ -388,13 +387,11 @@ end
 -- show sprite made of strings
 function str_spr(str,sx,sy)
 	for y,row in ipairs(str) do
-		local cols=split(row,"")
-		for x,col in ipairs(cols) do
+		for x,col in ipairs(split(row,"")) do
 			pset(sx+x-1,sy+y-1,col)
 		end
 	end
 end
-
 
 -- input for test mode
 function test_input()
@@ -407,7 +404,7 @@ function test_input()
 		'dragon',
 		'boomerangguy',
 		'bigguy',
-		'bug',
+		'nest',
 		'mr.x',
 	}
 	local key=stat(31)
@@ -419,24 +416,19 @@ function test_input()
 		end
 		if key=="<" then
 			player.x=min_x+64
-		end
-		if key==">" then
+		elseif key==">" then
 			player.x=max_x-80
-		end
-		if key=="a" then
+		elseif key=="a" then
 			local boss=get_boss()
 			if boss then
 				boss.state="ready"
 			end
-		end
-		if key=="b" then
+		elseif key=="b" then
 			show_enemy_bodies=not show_enemy_bodies
 			show_player_body=not show_player_body
-		end
-		if key=="e" then
+		elseif key=="e" then
 			no_enemies=not no_enemies
-		end
-		if key=="h" then
+		elseif key=="h" then
 			show_enemy_hitboxes=not show_enemy_hitboxes
 			show_player_hitbox=not show_player_hitbox
 		end
@@ -485,13 +477,10 @@ function new_effect(kind,x,y)
 			elseif self.kind=="player_hit" then
 				print("✽",self.x,self.y,8)
 			elseif self.kind=="break" then
-				spr(125,self.x,self.y,1,1)
+				spr(125,self.x,self.y)
 			end
 		end
 	}
-	if effects==nil then
-		effects={}
-	end
 	add(effects,effect)
 end
 
@@ -517,10 +506,14 @@ function update_enemies()
 		enemy:update()
 		if enemy.state=="dead" then
 			if	enemy.scored==false then
-				debug(enemy.value)
-				player.score+=enemy.value
+				local value=enemy.value
+				if player.last_strike=="jump" or
+						player.last_strike=="punch" then
+					value*=2
+				end
+				player.score+=value
 				enemy.scored=true
-				new_score(enemy.x,enemy.y,enemy.value)
+				new_score(enemy.x,enemy.y,value)
 			end
 			if enemy.y>camera_y+127 then
 				del(enemies,enemy)
@@ -563,28 +556,74 @@ end
 
 -- catchall function
 function new_enemy(kind,offset)
+	local enemy
+	if kind=="grabguy" then
+		enemy=new_grabguy(offset)
+	elseif kind=="knifeguy" then
+		enemy=new_knifeguy(offset)
+	elseif kind=="stickguy" then
+		enemy=new_stickguy()
+	elseif kind=="snake" then
+		enemy=new_snake(offset)
+	elseif kind=="ball" then
+		enemy=new_ball(offset)
+	elseif kind=="dragon" then
+		enemy=new_dragon(offset)
+	elseif kind=="boomerangguy" then
+		enemy=new_boomerangguy()
+	elseif kind=="bigguy" then
+		enemy=new_bigguy()
+	elseif kind=="nest" then
+		enemy=new_nest(offset)
+	end
 	if enemies==nil then
 		enemies={}
 	end
-	if kind=="grabguy" then
-		new_grabguy(offset)
-	elseif kind=="knifeguy" then
-		new_knifeguy(offset)
-	elseif kind=="stickguy" then
-		new_stickguy()
-	elseif kind=="snake" then
-		new_snake(offset)
-	elseif kind=="ball" then
-		new_ball(offset)
-	elseif kind=="dragon" then
-		new_dragon(offset)
-	elseif kind=="boomerangguy" then
-		new_boomerangguy()
-	elseif kind=="bigguy" then
-		new_bigguy()
-	elseif kind=="bug" then
-		new_bug(offset)
+	add(enemies,enemy)
+end
+
+-------------------------------
+-- nest
+-------------------------------
+
+function new_nest(offset)
+	offset=offset or 0
+	if player.direction==right then
+		x=player.x+100+offset
+	else
+		x=player.x-16-offset
 	end
+	local nest={
+		x=x,
+		y=flr(rnd(32))+camera_y+32,
+		state="waiting",
+		countdown=0,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=8,
+		},
+		update=function(self)
+			if state=="waiting" then
+				if player.x>self.x-100 or
+						player.x<self.x+100 then
+					self.state="active"
+				end
+			elseif state=="active" then
+				if countdown>0 then
+					countdown-=1
+				else
+					new_bug(self.x,self.y)
+					countdown=40
+				end
+			end
+		end,
+		draw=function(self)
+			spr(251,self.x,self.y)
+		end
+	}
+	return nest
 end
 
 -------------------------------
@@ -592,9 +631,7 @@ end
 -------------------------------
 
 function new_grabguy(offset)
-	if offset==nil then
-		offset=0
-	end
+	offset=offset or 0
 	local n=flr(rnd(2))
 	local x
 	if n==0 then
@@ -651,7 +688,7 @@ function new_grabguy(offset)
 			end
 		end,
 		draw=function(grabguy)
-			local sprite
+			local sprite=100
 			local flip_x
 			if grabguy.state=="walking" then
 				sprite=100+anim_index*2
@@ -669,10 +706,7 @@ function new_grabguy(offset)
 			spr(sprite,grabguy.x,grabguy.y,2,2,flip_x)
 		end
 	}
-	if enemies==nil then
-		enemies={}
-	end
-	add(enemies,grabguy)
+	return grabguy
 end
 
 -------------------------------
@@ -680,17 +714,21 @@ end
 -------------------------------
 
 function new_knifeguy(offset)
-	
-	if enemies==nil then
-		enemies={}
+	offset=offset or 0
+	local x
+	local n=flr(rnd(2))
+	if n==0 then
+		x=camera_x-16-offset
+	else
+		x=camera_x+127+offset
 	end
-	
 	local knifeguy={
+		x=x,
 		y=baseline,
 		health=2,
 		hit=0,
 		state="walking",
-		value=200,
+		value=400,
 		scored=false,
 		body={
 			x=0,
@@ -704,117 +742,103 @@ function new_knifeguy(offset)
 		throw_time=20,
 		cool_time=50,
 		cooldown=0,
-	}
-	
-	if offset==nil then
-		offset=0
-	end
-	local n=flr(rnd(2))
-	if n==0 then
-		knifeguy.x=camera_x-16-offset
-	else
-		knifeguy.x=camera_x+127+offset
-	end
-	
-	knifeguy.update=function(self)
-		self.hit-=1
-		if self.hit<1 then
-			self.hit=0
-		end
-		if self.health<=0 then
-			self.state="dead"
-		end
-		self.body.x=self.x+4
-		self.body.y=self.y
-		local target
-		local window=8
-		if self.x<player.x then
-			self.direction=right
-			target=player.x-32
-		else
-			self.direction=left
-			target=player.x+32
-		end
-		if self.state=="walking" then
-			if self.x<target-8 then
+		update=function(self)
+			self.hit-=1
+			if self.hit<1 then
+				self.hit=0
+			end
+			if self.health<=0 then
+				self.state="dead"
+			end
+			self.body.x=self.x+4
+			self.body.y=self.y
+			local target
+			local window=8
+			if self.x<player.x then
 				self.direction=right
-				self.state="walking"
-				self.x+=self.speed
-			elseif self.x>target+8 then
+				target=player.x-32
+			else
 				self.direction=left
-				self.state="walking"
-				self.x-=self.speed
-			else
-				self.state="throwing"
-				self.throwing=self.throw_time
+				target=player.x+32
 			end
-		elseif self.state=="throwing" then
-			-- time of release
-			if self.throwing==self.throw_time/2 then
-				local y=self.y-2
-				if self.attack_height==down then
-					y+=10
-					self.attack_height=up
+			if self.state=="walking" then
+				if self.x<target-8 then
+					self.direction=right
+					self.state="walking"
+					self.x+=self.speed
+				elseif self.x>target+8 then
+					self.direction=left
+					self.state="walking"
+					self.x-=self.speed
 				else
-					self.attack_height=down
+					self.state="throwing"
+					self.throwing=self.throw_time
 				end
-				sfx(snd_strike)
-				new_knife(self.x,y,self.direction*2)
-			elseif self.throwing<1 then
-				self.state="cooldown"
-				self.cooldown=self.cool_time
+			elseif self.state=="throwing" then
+				-- time of release
+				if self.throwing==self.throw_time/2 then
+					local y=self.y-2
+					if self.attack_height==down then
+						y+=10
+						self.attack_height=up
+					else
+						self.attack_height=down
+					end
+					sfx(snd_strike)
+					new_knife(self.x,y,self.direction*2)
+				elseif self.throwing<1 then
+					self.state="cooldown"
+					self.cooldown=self.cool_time
+				end
+				self.throwing-=1
+			elseif self.state=="cooldown" then
+				if self.cooldown<1 then
+					self.state="walking"
+				end
+				self.cooldown-=1
+			end		
+		end,
+		draw=function(self)
+			local sprite=128
+			if self.state=="walking" then
+				sprite=128+anim_index*2
+			elseif self.state=="throwing" then
+				if self.throwing>=self.throw_time/2 then
+					sprite=132
+				else
+					sprite=134
+				end
+				-- opposite (it changed)
+				if self.attack_height==down then
+					sprite+=4
+				end
+			elseif self.state=="dead" then
+				sprite=140
 			end
-			self.throwing-=1
-		elseif self.state=="cooldown" then
-			if self.cooldown<1 then
-				self.state="walking"
+			local flip_x
+			if self.x<player.x then
+				flip_x=false
+			else
+				flip_x=true
 			end
-			self.cooldown-=1
+			if sprite==132 or sprite==136 then
+				local x,y
+				if self.direction==right then
+					x=self.x-3
+				else
+					x=self.x+10
+				end	
+				if self.attack_height==up then
+					y=self.y-3
+				else
+					y=self.y+5
+				end
+				spr(98,x,y,1,1,not flip_x)
+			end
+			spr(sprite,self.x,self.y,2,2,flip_x)
 		end		
-	end
-	
-	knifeguy.draw=function(self)
-		local sprite=128
-		if self.state=="walking" then
-			sprite=128+anim_index*2
-		elseif self.state=="throwing" then
-			if self.throwing>=self.throw_time/2 then
-				sprite=132
-			else
-				sprite=134
-			end
-			-- opposite (it changed)
-			if self.attack_height==down then
-				sprite+=4
-			end
-		elseif self.state=="dead" then
-			sprite=140
-		end
-		local flip_x
-		if self.x<player.x then
-			flip_x=false
-		else
-			flip_x=true
-		end
-		if sprite==132 or sprite==136 then
-			local x,y
-			if self.direction==right then
-				x=self.x-3
-			else
-				x=self.x+10
-			end	
-			if self.attack_height==up then
-				y=self.y-3
-			else
-				y=self.y+5
-			end
-			spr(98,x,y,1,1,not flip_x)
-		end
-		spr(sprite,self.x,self.y,2,2,flip_x)
-	end
-
-	add(enemies,knifeguy)
-
+	}
+	return knifeguy
 end
 
 -------------------------------
@@ -822,11 +846,6 @@ end
 -------------------------------
 
 function new_stickguy(offset)
-
-	if enemies==nil then
-		enemies={}
-	end
-
 	local stickguy={
 		kind="stickguy",
 		x=min_x+16,
@@ -855,130 +874,124 @@ function new_stickguy(offset)
 		power=5,
 		value=1000,
 		scored=false,
-	}
-	
-	place_boss(stickguy)
-	
-	stickguy.update=function(self)
-		self.hit-=1
-		if self.hit<1 then
-			self.hit=0
-		end
-		if self.health<=0 then
-			self.state="dead"
-		end
-		self.hitbox.x=self.x
-		self.hitbox.y=self.y
-		if self.direction==left then
-			self.hitbox.x=self.x-2
-		else
-			self.hitbox.x=self.x+14
-		end
-		if self.position==down then
-			self.hitbox.y=self.y+8		
-		end
-		if self.state=="ready" then
-			self.state="walking"
-		elseif self.state=="walking" then
-			if self.cooldown>0 then
-				self.x+=self.speed*self.direction*-1
-				self.cooldown-=1
+		update=function(self)
+			self.hit-=1
+			if self.hit<1 then
+				self.hit=0
+			end
+			if self.health<=0 then
+				self.state="dead"
+			end
+			self.hitbox.x=self.x
+			self.hitbox.y=self.y
+			if self.direction==left then
+				self.hitbox.x=self.x-2
 			else
-				local target
-				local window=2
-				if self.x<player.x then
-					target=player.x-8
-				else
-					target=player.x+8
-				end
-				if self.x<target-window then
-					self.x+=self.speed
-					self.direction=right
-				elseif self.x>target+window then
-					self.x-=self.speed
-					self.direction=left
-				else
-					self.state="swinging"
-					self.swinging=enemy_strike_time
-					sfx(snd_strike)
-				end			
+				self.hitbox.x=self.x+14
 			end
-		elseif self.state=="swinging" then
-			self.swinging-=1
-			if self.swinging<1 then
-				local n=flr(rnd(2))
-				if n==0 then 
-					n=-1
-				end
-				self.position=n
-				--update_hitbox(enemy)
-				self.swinging=enemy_strike_time
-				self.chain+=1
+			if self.position==down then
+				self.hitbox.y=self.y+8		
 			end
-			if self.chain>2 then
-				self.chain=0
-				self.cooldown=15
-				self.position=up
+			if self.state=="ready" then
 				self.state="walking"
-			end
-		end
-		self.body.x=self.x+4
-		self.body.y=self.y
-		if collision(self.hitbox,player.body) and self.swinging==1 then
-			player:hurt(self.power)
-			sfx(snd_hit)
-			new_effect("player_hit",self.hitbox.x,self.hitbox.y)
-		end
-	end
-	
-	stickguy.draw=function(self)
-		local sprite=160
-		if self.state=="walking" then
-			sprite=160+anim_index*2
-		elseif self.state=="swinging" then
-			if self.swinging>enemy_strike_time/2 then
-				if self.position==up then
-					sprite=164
+			elseif self.state=="walking" then
+				if self.cooldown>0 then
+					self.x+=self.speed*self.direction*-1
+					self.cooldown-=1
 				else
-					sprite=168
+					local target
+					local window=2
+					if self.x<player.x then
+						target=player.x-8
+					else
+						target=player.x+8
+					end
+					if self.x<target-window then
+						self.x+=self.speed
+						self.direction=right
+					elseif self.x>target+window then
+						self.x-=self.speed
+						self.direction=left
+					else
+						self.state="swinging"
+						self.swinging=enemy_strike_time
+						sfx(snd_strike)
+					end			
 				end
-			else
-				if self.position==up then
-					sprite=166
-				else
-					sprite=170
+			elseif self.state=="swinging" then
+				self.swinging-=1
+				if self.swinging<1 then
+					local n=flr(rnd(2))
+					if n==0 then 
+						n=-1
+					end
+					self.position=n
+					--update_hitbox(enemy)
+					self.swinging=enemy_strike_time
+					self.chain+=1
+				end
+				if self.chain>2 then
+					self.chain=0
+					self.cooldown=15
+					self.position=up
+					self.state="walking"
 				end
 			end
-		elseif self.state=="dead" then
-			sprite=172
-		end
-		local flip_x
-		if self.direction==right then
-			flip_x=false
-		else
-			flip_x=true
-		end
-		spr(sprite,self.x,self.y,2,2,flip_x)
-
-		if self.swinging>0 and self.swinging<5 then
+			self.body.x=self.x+4
+			self.body.y=self.y
+			if collision(self.hitbox,player.body) and self.swinging==1 then
+				player:hurt(self.power)
+				sfx(snd_hit)
+				new_effect("player_hit",self.hitbox.x,self.hitbox.y)
+			end
+		end,
+		draw=function(self)
+			local sprite=160
+			if self.state=="walking" then
+				sprite=160+anim_index*2
+			elseif self.state=="swinging" then
+				if self.swinging>enemy_strike_time/2 then
+					if self.position==up then
+						sprite=164
+					else
+						sprite=168
+					end
+				else
+					if self.position==up then
+						sprite=166
+					else
+						sprite=170
+					end
+				end
+			elseif self.state=="dead" then
+				sprite=172
+			end
+			local flip_x
 			if self.direction==right then
-				if self.position==up then
-					line(self.x+15,self.y+2,self.x+19,self.y-2,0)
-				else
-					line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
-				end
+				flip_x=false
 			else
-				if self.position==up then
-					line(self.x,self.y+2,self.x-4,self.y-2,0)             
+				flip_x=true
+			end
+			spr(sprite,self.x,self.y,2,2,flip_x)
+			if self.swinging>0 and self.swinging<5 then
+				if self.direction==right then
+					if self.position==up then
+						line(self.x+15,self.y+2,self.x+19,self.y-2,0)
+					else
+						line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
+					end
 				else
-					line(self.x,self.y+9,self.x-7,self.y+9,0)				
+					if self.position==up then
+						line(self.x,self.y+2,self.x-4,self.y-2,0)             
+					else
+						line(self.x,self.y+9,self.x-7,self.y+9,0)				
+					end
 				end
 			end
 		end
-	end
-	
-	add(enemies,stickguy)
-	
+	}
+	place_boss(stickguy)	
+	return stickguy	
 end
 
 -------------------------------
@@ -1020,16 +1033,11 @@ function new_bigguy(offset)
 				self.state="dead"
 			end
 			self.hitbox.x=self.x
-			self.hitbox.y=self.y
+			self.hitbox.y=self.y+2
 			if self.direction==left then
 				self.hitbox.x=self.x-8
 			else
 				self.hitbox.x=self.x+8
-			end
-			if self.striking_position==down then
-				self.hitbox.y=self.y+8
-			else
-				self.hitbox.y=self.y
 			end
 			if self.state=="ready" then
 				self.state="walking"
@@ -1041,11 +1049,11 @@ function new_bigguy(offset)
 					local target
 					local window=2
 					if self.x<player.x then
-						target=player.x-8
+						target=player.x-4
 					else
-						target=player.x+8
+						target=player.x+4
 					end
-					if self.x<target-window then
+					if self.x<target-window then 
 						self.x+=self.speed
 						self.direction=right
 					elseif self.x>target+window then
@@ -1058,11 +1066,15 @@ function new_bigguy(offset)
 					end			
 				end
 			elseif self.state=="striking" then
+				if self.strike_position==down then
+					self.hitbox.y=self.y+10
+				end
 				if self.striking<1 then
 					local n=flr(rnd(2))
 					if n==0 then 
 						n=-1
 					end
+
 					self.strike_position=n
 					self.striking=enemy_strike_time
 					self.chain+=1
@@ -1077,7 +1089,7 @@ function new_bigguy(offset)
 			end
 			self.body.x=self.x
 			self.body.y=self.y
-			if collision(self.hitbox,player.body) and self.swinging==1 then
+			if collision(self.hitbox,player.body) and self.striking==1 then
 				player:hurt(self.power)
 				sfx(snd_hit)
 				new_effect("player_hit",self.hitbox.x,self.hitbox.y)
@@ -1105,10 +1117,7 @@ function new_bigguy(offset)
 		end
 	}
 	place_boss(bigguy)
-	if enemies==nil then
-		enemies={}
-	end	
-	add(enemies,bigguy)
+	return bigguy
 end
 
 -------------------------------
@@ -1138,19 +1147,22 @@ function new_bug(offset)
 		},
 		update=function(self)
 			self.x+=self.speed*self.direction	
-			self.y+=1
+			self.y+=0.5
 			self.body.x=self.x
 			self.body.y=self.y
+			if self.y>camera_y+127 then
+				del(enemies,self)
+			end
 		end,
 		draw=function(self)
 			local flip_x=false
-			spr(244,self.x,self.y)
+			if self.direction==right then
+				flip_x=true
+			end
+			spr(244+anim_index,self.x,self.y,1,1,flip_x)
 		end
 	}
-	if enemies==nil then
-		enemies={}
-	end
-	add(enemies,bug)
+	return bug
 end
 
 -------------------------------
@@ -1158,11 +1170,9 @@ end
 -------------------------------
 
 function new_ball(x)
-	if enemies==nil then
-		enemies={}
-	end
 	local ball={
 		kind="ball",
+		x=flr(rnd(64))+camera_x+32,
 		y=0,
 		state="falling",
 		countdown=50,
@@ -1174,76 +1184,70 @@ function new_ball(x)
 			height=8,
 		},
 		health=1,
-		value=500
-	}
-	ball.x=flr(rnd(64))+camera_x+32
-	ball.update=function(self)
-		if self.health<=0 then
-			new_effect("break",self.x,self.y)
-			del(enemies,self)
-		end
-		local dest_y=camera_y+48
-		if self.state=="falling" then
-			self.y+=gravity
-			if self.y>dest_y then
-				self.y=dest_y
-				self.state="countdown"
-				self.start_x=ball.x
-				self.start_y=ball.y
-			end
-		elseif self.state=="countdown" then
-			if anim_index==0 then
-				self.x=ball.start_x
-				self.y=ball.start_y
-			else
-				local x=flr(rnd(2))-1
-				local y=flr(rnd(2))-1
-				self.x+=x
-				self.y+=y
-			end
-			self.countdown-=1
-			if self.countdown<1 then
+		value=500,
+		update=function(self)
+			if self.health<=0 then
 				new_effect("break",self.x,self.y)
-				local shards={
-					{xs=-2,ys=-2},
-					{xs=2, ys=-2},
-					{xs=-2,ys=2},
-					{xs=2, ys=2}
-				}
-				for shard in all(shards) do
-					new_shard(self.x,self.y,shard.xs,shard.ys)
-				end
 				del(enemies,self)
 			end
+			local dest_y=camera_y+48
+			if self.state=="falling" then
+				self.y+=gravity
+				if self.y>dest_y then
+					self.y=dest_y
+					self.state="countdown"
+					self.start_x=self.x
+					self.start_y=self.y
+				end
+			elseif self.state=="countdown" then
+				if anim_index==0 then
+					self.x=self.start_x
+					self.y=self.start_y
+				else
+					local x=flr(rnd(2))-1
+					local y=flr(rnd(2))-1
+					self.x+=x
+					self.y+=y
+				end
+				self.countdown-=1
+				if self.countdown<1 then
+					new_effect("break",self.x,self.y)
+					local shards={
+						{xs=-2,ys=-2},
+						{xs=2, ys=-2},
+						{xs=-2,ys=2},
+						{xs=2, ys=2}
+					}
+					for shard in all(shards) do
+						new_shard(self.x,self.y,shard.xs,shard.ys)
+					end
+					del(enemies,self)
+				end
+			end
+			self.body.x=self.x
+			self.body.y=self.y
+			if collision(self.body,player.body) then
+				player:hurt(self.power)
+				new_effect("break",self.x,self.y)
+				del(enemies,self)
+			end
+		end,
+		draw=function(self)
+			sprite=124
+			spr(124,self.x,self.y,1,1)
 		end
-		self.body.x=ball.x
-		self.body.y=ball.y
-		if collision(self.body,player.body) then
-			player:hurt(self.power)
-			new_effect("break",self.x,self.y)
-			del(enemies,self)
-		end
-	end
-	ball.draw=function(self)
-		sprite=124
-		spr(124,self.x,self.y,1,1)
-	end
-	add(enemies,ball)
+	}
+	return ball
 end
 
 -------------------------------
 -- dragon
 -------------------------------
 
-function new_dragon(x)
-
-	if enemies==nil then
-		enemies={}
-	end
-	
+function new_dragon()
 	local dragon={
 		kind="dragon",
-		x=x,
+		x=flr(rnd(64))+camera_x+32,
 		y=camera_y-8,
 		anim=0,
 		state="falling",
@@ -1263,117 +1267,113 @@ function new_dragon(x)
 			y=0,
 			width=16,
 			height=8
-		}
-	}
-	dragon.x=flr(rnd(64))+camera_x+32
-	dragon.update=function(self)
-		local bottom=baseline
-		if self.x<player.x then
-			self.direction=right
-		else
-			self.direction=left
-		end
-		if self.state=="falling" then
-			self.body.y=self.y+8
-			self.y+=gravity
-			if self.y>bottom then
-				self.y=bottom
-				self.state="appearing"
-				sfx(snd_dragon)
-			end
-		elseif self.state=="appearing" then
-			if ticks%3==0 then
-				self.anim+=1
-				if self.anim>5 then
-					self.anim=5
-					self.state="idle"
-				end
-			end
-		elseif self.state=="idle" then
-			if self.idle_count<1 then
-				self.state="breathing"
-				self.breathing=20
-			end
-			self.idle_count-=1
-		elseif self.state=="breathing" then
-			if collision(self.hitbox,player.body) then
-				player:hurt(self.power)
-			end
-			if self.breathing<1 then
-				self.state="disappearing"
-			end
-			self.breathing-=1
-		elseif self.state=="disappearing" then
-			if ticks%3==0 then
-				self.anim-=1
-				if self.anim<1 then
-					del(enemies,self)
-				end
-			end
-		end
-		if self.health<=0 then
-			if self.state=="falling" or
-					self.state=="appearing" then
-				new_effect("break",self.x,self.y)
-				del(enemies,self)
-			elseif self.state=="idle" then
-				self.anim=5
-				self.state="disappearing"
-			end
-		end
-		self.body.x=self.x
-		self.body.y=self.y
-		if self.direction==left then
-			self.hitbox.x=self.x-16
-		else
-			self.hitbox.x=self.x+8
-		end
-		self.hitbox.y=self.y
-	end
-	
-	dragon.draw=function(self)
-		local flip_x
-		if self.x<player.x then
-			flip_x=false
-		else
-			flip_x=true
-		end
-		local sprite=72
-		if self.state=="falling" then
-			sprite=72
-		elseif self.state=="appearing" or
-				self.state=="disappearing" then
-			if self.anim==0 then
-				sprite=72
-			elseif self.anim==1 then
-				sprite=73
-			elseif self.anim==2 then
-				sprite=74
-			elseif self.anim==3 then
-				sprite=75
-			elseif self.anim==4 then
-				sprite=76
+		},
+		update=function(self)
+			local bottom=baseline
+			if self.x<player.x then
+				self.direction=right
 			else
+				self.direction=left
+			end
+			if self.state=="falling" then
+				self.body.y=self.y+8
+				self.y+=gravity
+				if self.y>bottom then
+					self.y=bottom
+					self.state="appearing"
+					sfx(snd_dragon)
+				end
+			elseif self.state=="appearing" then
+				if ticks%3==0 then
+					self.anim+=1
+					if self.anim>5 then
+						self.anim=5
+						self.state="idle"
+					end
+				end
+			elseif self.state=="idle" then
+				if self.idle_count<1 then
+					self.state="breathing"
+					self.breathing=20
+				end
+				self.idle_count-=1
+			elseif self.state=="breathing" then
+				if collision(self.hitbox,player.body) then
+					player:hurt(self.power)
+				end
+				if self.breathing<1 then
+					self.state="disappearing"
+				end
+				self.breathing-=1
+			elseif self.state=="disappearing" then
+				if ticks%3==0 then
+					self.anim-=1
+					if self.anim<1 then
+						del(enemies,self)
+					end
+				end
+			end
+			if self.health<=0 then
+				if self.state=="falling" or
+						self.state=="appearing" then
+					new_effect("break",self.x,self.y)
+					del(enemies,self)
+				elseif self.state=="idle" then
+					self.anim=5
+					self.state="disappearing"
+				end
+			end
+			self.body.x=self.x
+			self.body.y=self.y
+			if self.direction==left then
+				self.hitbox.x=self.x-16
+			else
+				self.hitbox.x=self.x+8
+			end
+			self.hitbox.y=self.y
+		end,
+		draw=function(self)
+			local flip_x
+			if self.x<player.x then
+				flip_x=false
+			else
+				flip_x=true
+			end
+			local sprite=72
+			if self.state=="falling" then
+				sprite=72
+			elseif self.state=="appearing" or
+					self.state=="disappearing" then
+				if self.anim==0 then
+					sprite=72
+				elseif self.anim==1 then
+					sprite=73
+				elseif self.anim==2 then
+					sprite=74
+				elseif self.anim==3 then
+					sprite=75
+				elseif self.anim==4 then
+					sprite=76
+				else
+					sprite=77
+				end
+			elseif self.state=="idle" then
+				sprite=77
+			elseif self.state=="breathing" then
 				sprite=77
 			end
-		elseif self.state=="idle" then
-			sprite=77
-		elseif self.state=="breathing" then
-			sprite=77
+			if self.breathing>0 then
+				spr(108,self.hitbox.x,self.hitbox.y,2,1,flip_x)
+			end
+			if test_mode and show_enemy_bodies then
+				draw_box(self.body,10)
+			end
+			local x=self.x
+			local y=self.y
+			spr(sprite,x,y,1,2,flip_x)
 		end
-		if self.breathing>0 then
-			spr(108,self.hitbox.x,self.hitbox.y,2,1,flip_x)
-		end
-		if test_mode and show_enemy_bodies then
-			draw_box(self.body,10)
-		end
-		local x=self.x
-		local y=self.y
-		spr(sprite,x,y,1,2,flip_x)
-	end
-	
-	add(enemies,dragon)
-
+	}
+	return dragon
 end
 
 -------------------------------
@@ -1432,6 +1432,10 @@ function new_snake(offset)
 					del(enemies,self)
 				end
 			end
+			if (self.locked_direction==right and self.x>camera_x+127) or
+					(self.locked_direction==left and self.x<camera_x-16) then
+				del(enemies,self)
+			end
 		end,
 		draw=function(snake)
 			local sprite
@@ -1451,10 +1455,7 @@ function new_snake(offset)
 			spr(sprite,snake.x,snake.y,1,1,flip_x)
 		end
 	}
-	if enemies==nil then
-		enemies={}
-	end	
-	add(enemies,snake)
+	return snake
 end
 	
 -------------------------------
@@ -1463,10 +1464,7 @@ end
 
 function new_boomerangguy(offset)
 	local throw_time=40
-	local cooldown_time=80
-	
-
-	
+	local cooldown_time=80	
 	local boomerangguy={
 		boss=true,
 		x=x,
@@ -1485,107 +1483,92 @@ function new_boomerangguy(offset)
 		direction=right,
 		attack_height=up,
 		cooldown=0,
+		update=function(self)
+			if self.health<1 then
+				self.state="dead"
+			end
+			if self.hit>0 then
+				self.hit-=1
+			end
+			if self.state=="ready" then
+				local target
+				if player.x<self.x then
+					target=player.x+48
+					self.direction=left
+				else
+					target=player.x-48
+					self.direction=right
+				end
+				if self.x>target then
+					self.x-=1
+				elseif self.x<target then
+					self.x+=1
+				end
+				if self.x<min_x then
+					self.x=min_x
+				elseif self.x>max_x-16 then
+					self.x=max_x-16
+				end
+				if self.cooldown<1 then
+					self.attack_height=random_pos()
+					self.state="throwing1"
+					self.throwing=throw_time
+				else
+					self.cooldown-=1
+				end
+			elseif self.state=="throwing1" then
+				if self.throwing<1 then
+					self.attack_height=random_pos()
+					self.state="throwing2"
+					self.throwing=throw_time
+				else
+					if self.throwing==throw_time/2 then
+						sfx(snd_strike)
+						new_boomerang(self)
+					end
+					self.throwing-=1
+				end		
+			elseif self.state=="throwing2" then
+				if self.throwing<1 then
+					self.state="ready"
+					self.cooldown=cooldown_time
+				else
+					if self.throwing==throw_time/2 then
+						sfx(snd_strike)
+						new_boomerang(self)
+					end
+					self.throwing-=1
+				end
+			end
+			self.body.x=self.x+4
+			self.body.y=self.y				
+		end,
+		draw=function(self)
+			pal(1,8)
+			local sprite=128
+			local flip_x=false
+			if self.state=="ready" then
+				sprite=128+anim_index*2
+			elseif self.state=="throwing1" or
+					self.state=="throwing2" then
+				if self.throwing<throw_time/2 then
+					sprite=134
+				else
+					sprite=132
+				end
+				if self.attack_height==down then
+					sprite+=4
+				end
+			end
+			if self.direction==left then
+				flip_x=true
+			end
+			spr(sprite,self.x,self.y,2,2,flip_x)
+			reset_palette()
+		end
 	}
-	
 	place_boss(boomerangguy)
-	
-	boomerangguy.update=function(self)
-
-		if self.health<1 then
-			self.state="dead"
-		end
-		if self.hit>0 then
-			self.hit-=1
-		end
-		
-		if self.state=="ready" then
-			local target
-			if player.x<self.x then
-				target=player.x+48
-				self.direction=left
-			else
-				target=player.x-48
-				self.direction=right
-			end
-			if self.x>target then
-				self.x-=1
-			elseif self.x<target then
-				self.x+=1
-			end
-			if self.x<min_x then
-				self.x=min_x
-			elseif self.x>max_x-16 then
-				self.x=max_x-16
-			end
-			if self.cooldown<1 then
-				self.attack_height=random_pos()
-				self.state="throwing1"
-				self.throwing=throw_time
-			else
-				self.cooldown-=1
-			end
-
-		elseif self.state=="throwing1" then
-			if self.throwing<1 then
-				self.attack_height=random_pos()
-				self.state="throwing2"
-				self.throwing=throw_time
-			else
-				if self.throwing==throw_time/2 then
-					sfx(snd_strike)
-					new_boomerang(self)
-				end
-				self.throwing-=1
-			end		
-			
-		elseif self.state=="throwing2" then
-			if self.throwing<1 then
-				self.state="ready"
-				self.cooldown=cooldown_time
-			else
-				if self.throwing==throw_time/2 then
-					sfx(snd_strike)
-					new_boomerang(self)
-				end
-				self.throwing-=1
-			end
-
-		end
-						
-		self.body.x=self.x+4
-		self.body.y=self.y		
-		
-	end
-	
-	boomerangguy.draw=function(self)
-		pal(1,8)
-		local sprite=128
-		local flip_x=false
-		if self.state=="ready" then
-			sprite=128+anim_index*2
-		elseif self.state=="throwing1" or
-				self.state=="throwing2" then
-			if self.throwing<throw_time/2 then
-				sprite=134
-			else
-				sprite=132
-			end
-			if self.attack_height==down then
-				sprite+=4
-			end
-		end
-		if self.direction==left then
-			flip_x=true
-		end
-		spr(sprite,self.x,self.y,2,2,flip_x)
-		reset_palette()
-	end
-
-	if enemies==nil then
-		enemies={}
-	end
-	add(enemies,boomerangguy)
-
+	return boomerangguy
 end
 
 -- ----------------------------
@@ -1605,33 +1588,13 @@ player={
 	score=0,
 	speed=1,
 	state="normal",
+	last_strike=nil,
 	x=0,
 	y=baseline,
 	body={x=0,y=0,width=8,height=16},
 	grabbers={},
 	hitbox={x=0,y=0,width=4,height=4},
 	old_input={x=0,y=0,k=false,p=false},
-
-	collisions=function(self)	
-		for enemy in all(enemies) do
-			if collision(self.body,enemy.body) then
-				self.jump_dir=0
-			end
-			if collision(self.hitbox,enemy.body) and
-					#player.grabbers==0 then
-				if is_climax(player.punching) or
-						is_climax(player.kicking) then	
-					hurt_enemy(enemy,1)
-					if enemy.boss then
-						enemy.x-=enemy.direction
-					end
-					sfx(-1)
-					sfx(snd_hit)
-				end
-			end
-		end
-	end,
-	
 	init=function(self)
 		if is_odd(current_level) then
 			self.x=max_x-16
@@ -1649,14 +1612,40 @@ player={
 		self.state="normal"
 		self.hit=0
 	end,
-	
+	collisions=function(self)	
+		for enemy in all(enemies) do
+			if collision(self.body,enemy.body) then
+				self.jump_dir=0
+			end
+			if collision(self.hitbox,enemy.body) and
+					#player.grabbers==0 then
+				if is_climax(player.punching) or
+						is_climax(player.kicking) then
+					local strike=""
+					if player.jumping>0 then
+						strike="jump"
+					elseif player.punching>0 then
+						strike="punch"
+					else
+						strike="kick"
+					end
+					self.last_strike=strike
+					hurt_enemy(enemy,1)
+					if enemy.boss then
+						enemy.x-=enemy.direction
+					end
+					sfx(-1)
+					sfx(snd_hit)
+				end
+			end
+		end
+	end,	
 	hurt=function(self,damage)
 		if player.hit<1 then
 			self.hit=player_hit_time
 			self.health-=damage
 		end
 	end,
-
 	update_complete=function(self)
 		self.stepping=false
 		if (is_even(current_level) and self.x<max_x) or
@@ -1669,56 +1658,36 @@ player={
 			self.stepping=true
 		end
 	end,
-		
 	update=function(self)
-		
-		player.hit-=1
-		if player.hit<1 then
-			player.hit=0
+		if player.hit>0 then
+			player.hit-=1
 		end
-		
-		-- always apply gravity
 		self.y+=gravity
 		if self.y>baseline then
 			self.y=baseline
 		end
-	
-		-- update striking
-	
 		if self.kicking>0 then
 			self.kicking-=1
 		end
-
 		if self.punching>0 then
 			self.punching-=1
 		end
-				
-		-- update hurt
 		if self.hit>0 then
 			self.hit-=1
 		end
-		
 		if self.grabbed>0 then
 			player.health-=1
 		end
-		
-		-- if no health left then die
 		if self.health<=0 then
 			if test_mode==false then
 				change_mode("death")
 			end
 		end
-		
-		-- if we're at end of level
 		if (is_odd(current_level) and self.x<=min_x-2) or
 				(is_even(current_level) and self.x+8>=max_x) then
 			change_mode("complete")
 		end
-		--update_hitbox(self)
-
-		-- get input
 		local input=get_input()
-		
 		if #self.grabbers==0 then
 			if input.k and
 					self.old_input.k==false and
@@ -1731,7 +1700,6 @@ player={
 				self.punching=strike_duration
 			end
 		end
-		
 		if self.state=="normal" then
 			if input.x~=0 then
 				self.direction=input.x
@@ -1769,35 +1737,28 @@ player={
 			else
 				self.position=up
 			end
-		
 		elseif self.state=="jumping" then
-			-- update jumping
 			if self.jumping>0 then
 				self.jumping-=1
 				self.y-=gravity*jump_force
 				self.x+=self.jump_dir
 			else
 				self.state="falling"
-			end
-			
+			end			
 		elseif self.state=="falling" then
 			self.x+=self.jump_dir
 			if self.y>=baseline then
 				self.state="normal"
 			end					
 		end
-		
 		if self.kicking==strike_duration or self.punching==strike_duration then
 			sfx(snd_strike)
 		end
-				
-		-- always update body
 		self.body.x=self.x+4
 		self.body.y=self.y
 		if self.position==down then
 			self.body.y=self.y+8
 		end
-			
 		self.hitbox.x=self.x
 		self.hitbox.y=self.y
 		self.hitbox.width=4
@@ -1813,13 +1774,9 @@ player={
 		if (self.jumping>0 and self.kicking>0) then
 			self.hitbox.height=16
 		end
-
 		self:collisions()
 		self.old_input=input
-			
 	end,
-	
-	-- draw player
 	draw=function(self)
 		local sprite
 		if self.state=="normal" then
@@ -1856,10 +1813,8 @@ player={
 					end
 				end
 			end
-			
 		elseif self.state=="climbing" then
 			sprite=2+anim_index*2		
-		
 		elseif self.state=="jumping" or
 				self.state=="falling" then
 			if player.kicking>0 then
@@ -1878,23 +1833,18 @@ player={
 					sprite=44					
 				end
 			end
-		end
-		
+		end		
 		local flip_x=false
 		if self.direction==left then
 			flip_x=true
 		end
-		
 		if test_mode and show_player_body then
 			draw_box(self.body,10)
 		end	
-		
 		if test_mode and show_player_hitbox then
 			draw_box(self.hitbox,10)
-		end		
-
+		end	
 		spr(sprite,self.x,self.y,2,2,flip_x)
-
 	end
 }
 
@@ -1967,20 +1917,15 @@ function new_boomerang(th)
 			self.body.y=self.y
 		end,
 		draw=function(self)
-			pal(1,8)
 			local flip_x
 			if self.direction<0 then
 				flip_x=true
 			else
 				flip_x=false
 			end
-			spr(247+anim_index*2,self.x,self.y,1,1,flip_x)
-			reset_palette()
+			spr(247+self.rotation,self.x,self.y,1,1,flip_x)
 		end
 	}
-	if projectiles==nil then
-		projectiles={}
-	end
 	add(projectiles,boomerang)
 end
 
@@ -2018,9 +1963,6 @@ function new_knife(x,y,xs)
 			spr(98,self.x,self.y,1,1,flip_x)
 		end
 	}
-	if projectiles==nil then
-		projectiles={}
-	end
 	add(projectiles,knife)
 end
 
@@ -2063,9 +2005,6 @@ function new_shard(x,y,xs,ys)
 			draw_box(box,7)
 		end
 	}
-	if projectiles==nil then
-		projectiles={}
-	end
 	add(projectiles,shard)
 end
 
@@ -2148,7 +2087,6 @@ complete_mode={
 		end
 	end,
 	update=function(self)
-		debug(self.state)
 		if self.state=="normal" then
 			self.x+=self.direction
 			update_camera(self.x)
@@ -2230,6 +2168,9 @@ cutscene_mode={
 death_mode={
 	init=function(self)
 		music(-1)
+		for enemy in all(enemies) do
+			enemy.state="idle"
+		end
 	end,
 	update=function(self)
 		player.x-=player.direction
@@ -2369,6 +2310,7 @@ start_mode={
 	init=function(self)
 		level_timer=2000
 		player:init()
+		effects={}
 		enemies={}
 		projectiles={}
 		update_camera()
@@ -2510,23 +2452,23 @@ cccccc666666ccccccccccc6666cccccccccccc6666ccccccccccc666c666ccccccccc9966666ccc
 ccccc666cc666ccccccccc4966cccccccccccc4966ccccccccccc666ccc66cccccccc6666cc66cccccccc6666cc66cccccccccccc49666ccccc0c0c8fffccccc
 cccc499cccc99ccccccccc49cccccccccccccc49cccccccccccc499ccc499ccccccc499ccc499ccccccc499ccc499cccccccccccc4c6499cccc0c0ccfcf8cccc
 cccc4444ccc444cccccccc444ccccccccccccc444ccccccccccc4444ccc444cccccc4444ccc444cccccc4444ccc444cccccccccccccc4444ccc0cccc88888ccc
-ccccc44cccccccccccccc44cccccccccccccc44cccccccccccccc44cccccccccccccc44ccccccccccccc44cccccccccccccc44cccccccccccccccccccccccccc
+ccccc4444cccccccccccc4444cccccccccccc4444cccccccccccc4444cccccccccccc4444ccccccccccc4444cccccccccccc4444cccccccccccccccccccccccc
 cccc4999cccccccccccc4999cccccccccccc4999cccccccccccc4999cccccccccccc4999ccccccccccc4999cccccccccccc4999ccccccccccccccccccccccccc
-cccc9949cccccccccccc9949cccccccccccc9949cccccccccccc9949cccccccccccc9949ccccccccccc9949cccccccccccc9999ccccccccccccccccc5555cccc
+cccc4949cccccccccccc4949cccccccccccc4949cccccccccccc4949cccccccccccc4949ccccccccccc4949cccccccccccc4999ccccccccccccccccc5555cccc
 cccc9999cccccccccccc9999cccccccccccc9999cccccccccccc9999cccccccccccc9999ccccccccccc9999cccccccccccc9999cccccccccccccccc5999ccccc
-cc997999cccccccccc997999cccccccccc997999ccccccccccc979999999999ccc997999cccccccccc79999ccccccccccc97799cccccccccccccccc5959c999c
+cc997999cccccccccc997999cccccccccc997999ccccccccccc97999cccccccccc997999cccccccccc79999ccccccccccc97799cccccccccccccccc5959c999c
 c999979cccccccccc999979cccccccccc999979cccccccccc99997979999999cc999979cccccccccc99779c9ccccccccc99997cccccccccccccccff9999599cc
-c999977cccccccccc999977cccccccccc999977ccccccccc999997779999c99cc999977cccccccccc9997799ccccccccc999977cccccccccccccffff9955cccc
-9999777ccccccccc9999777ccccccccc9999777ccccccccc99997777cccccccc9999977ccccccccc999977c9cccccccc9999777ccccccccccccffff55f5ccccc
-9997777ccccccccc9997777ccccccccc9997777ccccccccc9997777ccccccccc9999777ccccccccc99977799cccccccc9997777ccccccccccccfff555fcccccc
+c999977cccccccccc999977cccccccccc999977ccccccccc999997779999999cc999977cccccccccc9997799ccccccccc999977cccccccccccccffff9955cccc
+9999777ccccccccc9999777ccccccccc9999777ccccccccc999977779999c99c9999977ccccccccc999977c9cccccccc9999777ccccccccccccffff55f5ccccc
+9997777ccccccccc9997777ccccccccc9997777ccccccccc99977777cccccccc9999777ccccccccc99977799cccccccc9997777ccccccccccccfff555fcccccc
 9977777ccccccccc9977777ccccccccc9977799ccccccccc9997777ccccccccc9997799ccccccccc99777799cccccccc9977777ccccccccccccff555fccccccc
 9977777ccccccccc9977777ccccccccc9999999ccccccccc9997777ccccccccc9999999ccccccccc9977779ccccccccc9977777ccccccccccccc7557cccccccc
 99777779cccccccc99777779cccccccc99999779ccccccccc999977cccccccccd999977dcccccccc997777ddcccccccc99777779cccccccccccfff59cccccccc
 c9977799ccccccccc9977799ccccccccdddd7799ccccccccdd9997ccccccccccddddddddccccccccc9977dddddddddc0c9977ddddddc0ccccccc5599cccccccc
-99ddd7c9cccccccc99ddd7c9ccccccccddddddc9ccccccccddddd7ccccccccccddddd1ddcccccccc99dddddddddddd9099ddddddddd90cccccc555c55ccccccc
+99ddddc9cccccccc99ddddc9ccccccccddddddc9ccccccccddddddccccccccccddddd1ddcccccccc99dddddddddddd9099ddddddddd90cccccc555c55ccccccc
 cdddddcccccccccccdddddccccccccccddddddccccccccccddddddccccccccccdddd1dddcccccccccddddddddddddd90cddddddddd900ccccc955cc55ccccccc
 c1ddddcccccccccccdddddcccccccccccdddddcccccccccccdddddcccccccccccddd1dddcccccccccddddddccddddc00cddddddddd90cccccc999cc999cccccc
-cd1ddddcccccccccccdddddcccccccccc1dddddcccccccccc1ddddeccccccccccddd1dddcccccccccddddcccccccccccccdddddccccccccccccccccccccccccc
+cd1ddddcccccccccccdddddcccccccccc1dddddcccccccccc1dddddccccccccccddd1dddcccccccccddddcccccccccccccdddddccccccccccccccccccccccccc
 cdd1dddcccccccccccdddddccccccccccd1ddddccccccccccd1ddddcccccccccddddcd9ccccccccccddddccccccccccccccddddccccccccccccccccccccccccc
 cdd1dddccccccccccccddddccccccccccd1ddddccccccccccdd1dddcccccccccddddc900cccccccccddddccccccccccccccddddccccccccccccccccc5555cccc
 dddddddcccccccccccdddddcccccccccddd1dddcccccccccddd1dddcccccccccddddc00cccccccccddddccccccccccccccccdddcccccccccccccccc5999ccccc
@@ -2534,14 +2476,14 @@ dddcdddccccccccccc0dddccccccccccdddddddcccccccccdddddddcccccccccddddcccccccccccc
 dddcdd9ccccccccccc0ddcccccccccccdddccddcccccccccdddccddcccccccccdddcccccccccccccdddccccccccccccccccccd90cccccccccccccff9999ccccc
 099cc990cccccccccc099ccccccccccc99ccc99ccccccccc99ccc99ccccccccc99cccccccccccccc99ccccccccccccccccccc000ccccccccccccffff9959cccc
 c00cc00cccccccccccc000cccccccccc0000c000cccccccc0000c000cccccccc000ccccccccccccc0000ccccccccccccccccc00ccccccccccccffff55f59cccc
-ccc77ccc9cc77cc9cccccccccccccccc888cccccccccccccccccccccccccfccccccfcccccccccccccccccccccccccccccccccccccccccccccccfff555fcccccc
-7cccccc7c97cc79c7c7777cccc7777ccc888c888ccc88888ccc5555cccccf4cccc4fcccccccccccccccccccccccccccccccccccccccccccccccff555fccccccc
-cc7cc7ccc779977cc777887cc777777ccc88888ccaaa88cccc5999ccccccf4cccc4fcccccc44444cc44444cccccccccccccccccccccccccccccc7557cccccccc
-cccccccc7c9779c7cc788887cc778877caaa88cca8aa0acccc5959ccccccf4cccc4fcccccc4ffffffffff4cccccccccccccccccccccccccccccfff59cccccccc
-cccccccc7c9779c7c7788887c7778877a8aa0accaaa00a0ccc9999ccfffff4cccc4fffffcc4fccccccccf4cccccccccccccccccccccccccccccc5599cccccccc
-cc7cc7ccc779977ccc77887ccc77777caaa00a0cccc0ca0accc99cccc44444cccc44444ccc4fccccccccf4cccccccccccccccccccccccccccccc555ccccccccc
-7cccccc7c97cc79cc77777ccc7c777ccccc0ca0acc0ccccccccccccccccccccccccccccccc4fccccccccf4cccccccccccccccccccccccccccccc55cccccccccc
-ccc77ccc9cc77cc9cccccccccccccccccc0ccccccccccccccccccccccccccccccccccccccccfccccccccfccccccccccccccccccccccccccccccc999ccccccccc
+ccc77ccc9cc77cc9cccccccccccccccc888cccccccccccccccccccccccccfccccccfcccccccccccccccccccccfffffffcccccccccccccccccccfff555fcccccc
+7cccccc7c97cc79c7c7777cccc7777ccc888c888ccc88888ccc5555cccccf4cccc4fcccccccccccccccccccc4f44444fcccccccccccccccccccff555fccccccc
+cc7cc7ccc779977cc777887cc777777ccc88888ccaaa88cccc5999ccccccf4cccc4fcccccc44444cc44444cc4fdddd4fcccccccccccccccccccc7557cccccccc
+cccccccc7c9779c7cc788887cc778877caaa88cca8aa0acccc5959ccccccf4cccc4fcccccc4ffffffffff4cc4fdddd4fcccccccccccccccccccfff59cccccccc
+cccccccc7c9779c7c7788887c7778877a8aa0accaaa00a0ccc9999ccfffff4cccc4fffffcc4fccccccccf4cc4fdddd4fcccccccccccccccccccc5599cccccccc
+cc7cc7ccc779977ccc77887ccc77777caaa00a0cccc0ca0accc99cccc44444cccc44444ccc4fccccccccf4cc4fdddd4fcccccccccccccccccccc555ccccccccc
+7cccccc7c97cc79cc77777ccc7c777ccccc0ca0acc0ccccccccccccccccccccccccccccccc4fccccccccf4cc4fffffffcccccccccccccccccccc55cccccccccc
+ccc77ccc9cc77cc9cccccccccccccccccc0ccccccccccccccccccccccccccccccccccccccccfccccccccfccc4444444ccccccccccccccccccccc999ccccccccc
 __label__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
