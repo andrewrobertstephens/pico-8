@@ -8,7 +8,7 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=true
+test_mode=false
 no_enemies=true
 show_enemy_bodies=true
 show_enemy_hitboxes=true
@@ -79,28 +79,28 @@ sequences={
 
 levels={
 	{
-		blocks="<___11111111111111__",
+		blocks="<__b11111111111111__",
 		boss="stickguy"
 	},
 	{
-		blocks="___22222221111111__>",
+		blocks="__22222222111111b__>",
 		boss="boomerangguy"
 	},
 	{
-		blocks="<___11111113333333__",
+		blocks="<__b11111113333333__",
 		boss="bigguy"
 	},
 	{
-		blocks="__hmlh_111111111___>",
+		blocks="__hmlh_111111111b__>",
 		boss="magician"
 	},
 	{
-		blocks="<___11111112222222__",
+		blocks="<__b11111112222222__",
 		boss="mrx"
 	}
 }
 
-current_level=2
+current_level=1
 active_level=nil
 
 palt(0,false)
@@ -229,7 +229,6 @@ function draw_box(box,c)
 	)
 end
 
-
 -- draw the osd
 function draw_osd()
  function get_boss_health()
@@ -261,7 +260,7 @@ function draw_osd()
 	end
 	local x=camera_x+5
 	local y=camera_y+5
-	rectfill(camera_x,camera_y,camera_x+128,camera_y+24,1)
+	rectfill(camera_x,camera_y,camera_x+127,camera_y+24,1)
 	print('player',x,y,9)
 	health_bar(x+25,y,player.health/100,9)
 	print(' enemy',x,y+8,8)
@@ -272,7 +271,7 @@ function draw_osd()
 	spr(246,x+48,y+7,1,1)
 	print(pad(""..player.score,6),x+97,y)
 	print("time:"..flr(level_timer),x+85,y+8)
-	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
+	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,1)
 	if test_mode and show_test_osd then
 		cursor(camera_x+2,camera_y+107)
 		print("game_mode="..game_mode,7)
@@ -322,10 +321,10 @@ end
 
 -- place boss at end of level
 function place_boss(boss)
-	boss.x=max_x-chunk_size-16
+	boss.x=max_x-chunk_size*2
 	boss.direction=left
 	if is_odd(current_level) then
-		boss.x=min_x+chunk_size
+		boss.x=min_x+chunk_size*2
 		boss.direction=right
 	end	
 end
@@ -367,7 +366,7 @@ function test_input()
 		'boomerangguy',
 		'bigguy',
 		'nest',
-		'mr.x',
+		'mrx',
 	}
 	local key=stat(31)
 	local num=tonum(key)
@@ -538,10 +537,21 @@ function new_enemy(kind,offset)
 	elseif kind=="nest" then
 		enemy=new_nest(offset)
 	end
-	if enemies==nil then
-		enemies={}
-	end
 	add(enemies,enemy)
+end
+
+-------------------------------
+-- magician
+-------------------------------
+
+function new_magician(offset)
+	local magician={
+		x=0,
+		y=0,
+		health=boss_health,
+	}
+	place_boss(magician)
+	return magician
 end
 
 -------------------------------
@@ -2102,8 +2112,9 @@ cutscene_mode={
 	end,
 	draw=function(self)
 		cls(12)
-		rectfill(0,0,127,23,0)
-		map(16,7,0,baseline+15,16,3)
+		--rectfill(camera_x,camera_y,camera_x+127,camera_y+24,1)
+		rectfill(0,0,127,24,1)
+		map(0,7,0,baseline+16,16,3)
 		center_print("save sylvia from mr.x",66,32,7,true)
 		if cutscene_flash then
 			cursor(8,48)
@@ -2119,7 +2130,7 @@ cutscene_mode={
 		spr(174,16,baseline,2,2)
 		--str_spr(spr_sylvia,16,baseline)
 		player:draw()
-		rectfill(0,104,127,127,0)
+		rectfill(0,104,127,127,1)
 	end
 }
 
@@ -2202,12 +2213,6 @@ menu_mode={
 -- play (main) program
 -------------------------------
 
-function build_level()
-
-	local level="0000000000"
-	
-end
-
 -- draw the current level
 function draw_level()
 
@@ -2285,14 +2290,21 @@ function process_level()
 			local endx=startx+chunk_size-1
 			if player.x>=startx and
 					player.x<=endx then
-				local n=tonum(block)
-				if n then
-					local sequence=sequences[tonum(block)]
-					local seq_row=sequence[seq_index]
-					do_seq_row(seq_row)
-					seq_index+=1
-					if seq_index>#sequence then
-						seq_index=1
+				if block=="b" then
+					local boss=get_boss()
+					if boss and boss.state=="waiting" then
+						boss.state="ready"
+					end
+				else
+					local n=tonum(block)
+					if n then
+						local sequence=sequences[tonum(block)]
+						local seq_row=sequence[seq_index]
+						do_seq_row(seq_row)
+						seq_index+=1
+						if seq_index>#sequence then
+							seq_index=1
+						end
 					end
 				end
 			end
@@ -2385,6 +2397,18 @@ tally_mode={
 		draw_osd()
 	end
 }
+-->8
+--[[
+	todo:
+		- magician
+		- mr.x
+		- ending
+		- remove lives
+		- game over
+		- better boss placement?
+		- stairs placement
+		- climbing animation
+]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cccccc0999cccccccccccc0999cccccccccccc0999cccccccccccc0000ccccccccccc0999cccccccccccccc0000cccccccccccccc0000ccccccccccccccccccc
