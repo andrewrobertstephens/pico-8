@@ -8,13 +8,10 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=false
+test_mode=true
 no_enemies=true
-show_enemy_bodies=true
-show_enemy_hitboxes=true
-show_player_body=true
-show_player_hitbox=true
-show_test_osd=true
+show_bodies=true
+show_hitboxes=true
 skip_cutscene=true
 
 -- constants
@@ -31,7 +28,6 @@ player_hit_time=5
 enemy_hit_time=5
 jump_max=8
 jump_force=2
-
 
 strike_duration=8
 strike_contact=6
@@ -101,7 +97,7 @@ levels={
 }
 
 current_level=1
-active_level=nil
+seq_index=1
 
 palt(0,false)
 palt(12,true)
@@ -260,7 +256,7 @@ function draw_osd()
 	end
 	local x=camera_x+5
 	local y=camera_y+5
-	rectfill(camera_x,camera_y,camera_x+127,camera_y+24,1)
+	rectfill(camera_x,camera_y,camera_x+127,camera_y+24,0)
 	print('player',x,y,9)
 	health_bar(x+25,y,player.health/100,9)
 	print(' enemy',x,y+8,8)
@@ -271,7 +267,7 @@ function draw_osd()
 	spr(246,x+48,y+7,1,1)
 	print(pad(""..player.score,6),x+97,y)
 	print("time:"..flr(level_timer),x+85,y+8)
-	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,1)
+	rectfill(camera_x,camera_y+105,camera_x+127,camera_y+127,0)
 	if test_mode and show_test_osd then
 		cursor(camera_x+2,camera_y+107)
 		print("game_mode="..game_mode,7)
@@ -384,14 +380,14 @@ function test_input()
 			if boss then
 				boss.state="ready"
 			end
+		elseif key=="l" then
+			new_enemy("magician")
 		elseif key=="b" then
-			show_enemy_bodies=not show_enemy_bodies
-			show_player_body=not show_player_body
+			show_bodies=not show_bodies
 		elseif key=="e" then
 			no_enemies=not no_enemies
 		elseif key=="h" then
-			show_enemy_hitboxes=not show_enemy_hitboxes
-			show_player_hitbox=not show_player_hitbox
+			show_hitboxes=not show_hitboxes
 		end
 	end
 end
@@ -489,10 +485,10 @@ end
 function draw_enemies()
 	for enemy in all(enemies) do
 		if test_mode then
-			if show_enemy_bodies then
+			if show_bodies then
 				draw_box(enemy.body,10)
 			end
-			if show_enemy_hitboxes then
+			if show_hitboxes then
 				if enemy.hitbox~=nil then
 					draw_box(enemy.hitbox,10)
 				end
@@ -534,8 +530,8 @@ function new_enemy(kind,offset)
 		enemy=new_boomerangguy()
 	elseif kind=="bigguy" then
 		enemy=new_bigguy()
-	elseif kind=="nest" then
-		enemy=new_nest(offset)
+	elseif kind=="magician" then
+		enemy=new_magician()
 	end
 	add(enemies,enemy)
 end
@@ -548,7 +544,19 @@ function new_magician(offset)
 	local magician={
 		x=0,
 		y=0,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=12
+		},
 		health=boss_health,
+		update=function(self)
+		end,
+		draw=function(self)
+			local sprite=68
+			spr(68+anim_index*2,self.x,self.y,2,2)
+		end
 	}
 	place_boss(magician)
 	return magician
@@ -1337,7 +1345,7 @@ function new_dragon()
 			if self.breathing>0 then
 				spr(108,self.hitbox.x,self.hitbox.y,2,1,flip_x)
 			end
-			if test_mode and show_enemy_bodies then
+			if test_mode and show_bodies then
 				draw_box(self.body,10)
 			end
 			local x=self.x
@@ -1810,10 +1818,10 @@ player={
 		if self.direction==left then
 			flip_x=true
 		end
-		if test_mode and show_player_body then
+		if test_mode and show_bodies then
 			draw_box(self.body,10)
 		end	
-		if test_mode and show_player_hitbox then
+		if test_mode and show_hitboxes then
 			draw_box(self.hitbox,10)
 		end	
 		spr(sprite,self.x,self.y,2,2,flip_x)
@@ -2113,7 +2121,7 @@ cutscene_mode={
 	draw=function(self)
 		cls(12)
 		--rectfill(camera_x,camera_y,camera_x+127,camera_y+24,1)
-		rectfill(0,0,127,24,1)
+		rectfill(0,0,127,24,0)
 		map(0,7,0,baseline+16,16,3)
 		center_print("save sylvia from mr.x",66,32,7,true)
 		if cutscene_flash then
@@ -2130,7 +2138,7 @@ cutscene_mode={
 		spr(174,16,baseline,2,2)
 		--str_spr(spr_sylvia,16,baseline)
 		player:draw()
-		rectfill(0,104,127,127,1)
+		rectfill(0,104,127,127,0)
 	end
 }
 
@@ -2250,24 +2258,6 @@ function draw_level()
 		local x=(i-1)*64
 		draw_block(block,x,24,true)
 	end
-
-	--[[
-	for i=-6,level_size/16+6 do
-		local x=i*128
-		if current_level==1 then
-			map(0,0,x,24,16,10)
-		else
-			map(16,0,x,24,16,10)
-		end
-	end
-	for i=0,5 do
-		if is_even(current_level) then
-			spr(81,max_x+48-i*8,33+i*8,1,1,true)
-		else
-			spr(81,-48+i*8,33+i*8)
-		end
-	end
-	]]
 end
 
 
@@ -2277,10 +2267,6 @@ function process_level()
 		for i,en in ipairs(seq_row) do
 			new_enemy(en,i*8)
 		end	
-	end
-
-	if seq_index==nil then
-		seq_index=1
 	end
 	
 	if ticks%100==0 then
@@ -2321,7 +2307,9 @@ play_mode={
 		if test_mode then
 			test_input()
 		end
-		process_level()
+		if test_mode==false or no_enemies==false then
+			process_level()
+		end
 		update_effects()
 		update_enemies()
 		player:update()
@@ -2353,7 +2341,9 @@ start_mode={
 		player:init()
 		effects={}
 		enemies={}
-		new_enemy(active_level.boss)
+		if test_mode==false or no_enemies==false then
+			new_enemy(active_level.boss)
+		end
 		projectiles={}
 		update_camera()
 		sfx(snd_walking)
