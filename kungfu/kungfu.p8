@@ -8,7 +8,7 @@ __lua__
 -- version 0.1
 -- ===================
 
-test_mode=true
+test_mode=false
 no_enemies=true
 show_bodies=true
 show_hitboxes=true
@@ -80,23 +80,15 @@ levels={
 	},
 	{
 		blocks="__22222222111111b__>",
-		boss="boomerangguy"
-	},
-	{
-		blocks="<__b11111113333333__",
 		boss="bigguy"
 	},
 	{
-		blocks="__hmlh_111111111b__>",
-		boss="magician"
-	},
-	{
-		blocks="<__b11111112222222__",
+		blocks="<__b11111113333333__",
 		boss="mrx"
 	}
 }
 
-current_level=1
+current_level=2
 seq_index=1
 
 palt(0,false)
@@ -359,9 +351,7 @@ function test_input()
 		'snake',
 		'ball',
 		'dragon',
-		'boomerangguy',
 		'bigguy',
-		'nest',
 		'mrx',
 	}
 	local key=stat(31)
@@ -372,16 +362,14 @@ function test_input()
 			new_enemy(en)
 		end
 		if key=="<" then
-			player.x=min_x+64
+			player.x=min_x+chunk_size*3
 		elseif key==">" then
-			player.x=max_x-80
+			player.x=max_x-chunk_size*3-16
 		elseif key=="a" then
 			local boss=get_boss()
 			if boss then
 				boss.state="ready"
 			end
-		elseif key=="l" then
-			new_enemy("magician")
 		elseif key=="b" then
 			show_bodies=not show_bodies
 		elseif key=="e" then
@@ -526,40 +514,12 @@ function new_enemy(kind,offset)
 		enemy=new_ball(offset)
 	elseif kind=="dragon" then
 		enemy=new_dragon(offset)
-	elseif kind=="boomerangguy" then
-		enemy=new_boomerangguy()
 	elseif kind=="bigguy" then
 		enemy=new_bigguy()
-	elseif kind=="magician" then
-		enemy=new_magician()
+	elseif kind=="mrx" then
+		enemy=new_mrx()
 	end
 	add(enemies,enemy)
-end
-
--------------------------------
--- magician
--------------------------------
-
-function new_magician(offset)
-	local magician={
-		x=0,
-		y=0,
-		body={
-			x=0,
-			y=0,
-			width=8,
-			height=12
-		},
-		health=boss_health,
-		update=function(self)
-		end,
-		draw=function(self)
-			local sprite=68
-			spr(68+anim_index*2,self.x,self.y,2,2)
-		end
-	}
-	place_boss(magician)
-	return magician
 end
 
 -------------------------------
@@ -953,18 +913,20 @@ function new_stickguy(offset)
 				flip_x=true
 			end
 			spr(sprite,self.x,self.y,2,2,flip_x)
-			if self.swinging>0 and self.swinging<5 then
-				if self.direction==right then
-					if self.position==up then
-						line(self.x+15,self.y+2,self.x+19,self.y-2,0)
+			if self.dead==false then
+				if self.swinging>0 and self.swinging<5 then
+					if self.direction==right then
+						if self.position==up then
+							line(self.x+15,self.y+2,self.x+19,self.y-2,0)
+						else
+							line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
+						end
 					else
-						line(self.x+15,self.y+9,self.x+20,self.y+9,0)				
-					end
-				else
-					if self.position==up then
-						line(self.x,self.y+2,self.x-4,self.y-2,0)             
-					else
-						line(self.x,self.y+9,self.x-7,self.y+9,0)				
+						if self.position==up then
+							line(self.x,self.y+2,self.x-4,self.y-2,0)             
+						else
+							line(self.x,self.y+9,self.x-7,self.y+9,0)				
+						end
 					end
 				end
 			end
@@ -1438,119 +1400,6 @@ function new_snake(offset)
 	return snake
 end
 	
--------------------------------
--- boomerang guy
--------------------------------
-
-function new_boomerangguy(offset)
-	local throw_time=40
-	local cooldown_time=80	
-	local boomerangguy={
-		boss=true,
-		x=x,
-		y=baseline,
-		health=boss_health,
-		hit=0,
-		state="waiting",
-		throwing=0,
-		body={
-			x=0,
-			y=0,
-			width=8,
-			height=16,
-		},
-		speed=1.5,
-		direction=right,
-		attack_height=up,
-		cooldown=0,
-		update=function(self)
-			if self.health<1 then
-				self.state="dead"
-			end
-			if self.hit>0 then
-				self.hit-=1
-			end
-			if self.state=="ready" then
-				local target
-				if player.x<self.x then
-					target=player.x+48
-					self.direction=left
-				else
-					target=player.x-48
-					self.direction=right
-				end
-				if self.x>target then
-					self.x-=1
-				elseif self.x<target then
-					self.x+=1
-				end
-				if self.x<min_x then
-					self.x=min_x
-				elseif self.x>max_x-16 then
-					self.x=max_x-16
-				end
-				if self.cooldown<1 then
-					self.attack_height=random_pos()
-					self.state="throwing1"
-					self.throwing=throw_time
-				else
-					self.cooldown-=1
-				end
-			elseif self.state=="throwing1" then
-				if self.throwing<1 then
-					self.attack_height=random_pos()
-					self.state="throwing2"
-					self.throwing=throw_time
-				else
-					if self.throwing==throw_time/2 then
-						sfx(snd_strike)
-						new_boomerang(self)
-					end
-					self.throwing-=1
-				end		
-			elseif self.state=="throwing2" then
-				if self.throwing<1 then
-					self.state="ready"
-					self.cooldown=cooldown_time
-				else
-					if self.throwing==throw_time/2 then
-						sfx(snd_strike)
-						new_boomerang(self)
-					end
-					self.throwing-=1
-				end
-			end
-			self.body.x=self.x+4
-			self.body.y=self.y				
-		end,
-		draw=function(self)
-			pal(1,8)
-			local sprite=128
-			local flip_x=false
-			if self.state=="ready" then
-				sprite=128+anim_index*2
-			elseif self.state=="throwing1" or
-					self.state=="throwing2" then
-				if self.throwing<throw_time/2 then
-					sprite=134
-				else
-					sprite=132
-				end
-				if self.attack_height==down then
-					sprite+=4
-				end
-			end
-			if self.direction==left then
-				flip_x=true
-			end
-			spr(sprite,self.x,self.y,2,2,flip_x)
-			reset_palette()
-		end
-	}
-	place_boss(boomerangguy)
-	return boomerangguy
-end
-
 -- ----------------------------
 -- player
 -- ----------------------------
@@ -1663,8 +1512,8 @@ player={
 				change_mode("death")
 			end
 		end
-		if (is_odd(current_level) and self.x<=min_x-2) or
-				(is_even(current_level) and self.x+8>=max_x) then
+		if (is_odd(current_level) and self.x<=min_x) or
+				(is_even(current_level) and self.x>=max_x-16) then
 			change_mode("complete")
 		end
 		local input=get_input()
@@ -1827,6 +1676,103 @@ player={
 		spr(sprite,self.x,self.y,2,2,flip_x)
 	end
 }
+
+-------------------------------
+-- mr.x
+-------------------------------
+
+function new_mrx()
+	local mrx={
+		x=0,
+		y=baseline,
+		ducking=false,
+		punching=0,
+		kicking=0,
+		power=10,
+		hitbox={
+			x=0,
+			y=0,
+			width=4,
+			height=4
+		},
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=16,
+		},
+		attack=function(self)
+			local n=flr(rnd(2))
+			if n==0 then
+				self.punching=strike_duration
+			else
+				self.kicking=strike_duration
+			end
+		end,
+		update=function(self)
+			self.body.x=self.x
+			self.body.y=self.y
+			self.hitbox.x=self.x
+			self.hitbox.y=self.y
+			self.hitbox.width=4
+			self.hitbox.height=4
+			if self.direction==left then
+				self.hitbox.x=self.x-2
+			else
+				self.hitbox.x=self.x+14
+			end
+
+			if self.state=="ready" then
+				if player.x<self.x+16 then
+					local n=flr(rnd(2))
+					if n>0 then
+						self:attack()
+					end				
+				end
+			elseif self.state=="jumping" then
+
+			end
+			self.y+=gravity
+			if self.y>baseline then
+				self.y=baseline
+			end
+			if self.kicking>0 then
+				if is_climax(self.kicking) and
+						collision(self.hitbox,player.body) then
+					player:hurt(self.power)
+				end						
+				self.kicking-=1
+			end
+			if self.punching>0 then
+				if is_climax(self.punching) and
+						collision(self.hitbox,player.body) then
+					player:hurt(self.power)
+				end
+				self.punching-=1
+			end
+		end,
+		draw=function(self)
+			pal(0,8)
+			pal(7,0)
+			pal(6,5)
+			local sprite=10
+			if self.kicking>0 then
+				if is_climax(self.kicking) then
+					sprite=8
+				end
+			elseif self.punching>0 then
+				if is_climax(self.punching) then
+					sprite=12
+				end
+			end
+			spr(sprite,self.x,self.y,2,2)
+			reset_palette()
+		end
+	}
+	place_boss(mrx)
+	mrx.state="ready"
+	return mrx
+end
 
 -- get game input
 function get_input()
@@ -2060,8 +2006,9 @@ complete_mode={
 		self.x=camera_x
 		self.direction=left
 		self.state="normal"
-		self.timer=48
+		self.timer=63
 		player.state="normal"
+		player.walking=false
 		if is_even(current_level) then
 			self.direction=right
 		end
@@ -2069,22 +2016,30 @@ complete_mode={
 	update=function(self)
 		if self.state=="normal" then
 			self.x+=self.direction
+			player.walking=false
 			update_camera(self.x)
 			if self.timer<1 then
 				music(-1)
+				self.state="walking"
+				self.timer=26
+			end
+		elseif self.state=="walking" then
+			player.x+=self.direction		
+			player.walking=true
+			if self.timer<1 then
 				self.state="climbing"
 				player.state="climbing"
 			end
-			self.timer-=1
 		elseif self.state=="climbing" then
+			player.x+=self.direction
 			if player.y<camera_y-16 then
 				change_mode("tally")
 			end
 			if anim_index==1 then
 				player.y-=2
 			end
-			player.x+=self.direction
 		end
+		self.timer-=1
 	end,
 	draw=function(self)
 		cls(12)
@@ -2224,9 +2179,8 @@ menu_mode={
 -- draw the current level
 function draw_level()
 
-	function draw_block(block,x,y,first)
-		local first=first or false
-		if first then
+	function draw_block(block,x,y)
+		if current_level==1 then
 			if block=="<" then
 				map(0,10,x,y,8,10)
 			elseif block==">" then
@@ -2256,8 +2210,9 @@ function draw_level()
 	local blocks=split(level.blocks,"",false)
 	for i,block in ipairs(blocks) do
 		local x=(i-1)*64
-		draw_block(block,x,24,true)
+		draw_block(block,x,24)
 	end
+
 end
 
 
@@ -2352,7 +2307,7 @@ start_mode={
 		player.walking=true
 		player.x+=player.speed*player.direction
 		if (player.direction==left and player.x<=max_x-64) or
-				(player.direction==right and player.x>=64) then
+				(player.direction==right and player.x>=min_x+48) then
 			change_mode("play")
 		end
 	end,
@@ -2389,15 +2344,150 @@ tally_mode={
 }
 -->8
 --[[
-	todo:
-		- magician
-		- mr.x
-		- ending
-		- remove lives
-		- game over
-		- better boss placement?
-		- stairs placement
-		- climbing animation
+
+ran out of room for:
+
+-------------------------------
+-- boomerang guy
+-------------------------------
+
+function new_boomerangguy(offset)
+	local throw_time=40
+	local cooldown_time=80	
+	local boomerangguy={
+		boss=true,
+		x=x,
+		y=baseline,
+		health=boss_health,
+		hit=0,
+		state="waiting",
+		throwing=0,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=16,
+		},
+		speed=1.5,
+		direction=right,
+		attack_height=up,
+		cooldown=0,
+		update=function(self)
+			if self.health<1 then
+				self.state="dead"
+			end
+			if self.hit>0 then
+				self.hit-=1
+			end
+			if self.state=="ready" then
+				local target
+				if player.x<self.x then
+					target=player.x+48
+					self.direction=left
+				else
+					target=player.x-48
+					self.direction=right
+				end
+				if self.x>target then
+					self.x-=1
+				elseif self.x<target then
+					self.x+=1
+				end
+				if self.x<min_x then
+					self.x=min_x
+				elseif self.x>max_x-16 then
+					self.x=max_x-16
+				end
+				if self.cooldown<1 then
+					self.attack_height=random_pos()
+					self.state="throwing1"
+					self.throwing=throw_time
+				else
+					self.cooldown-=1
+				end
+			elseif self.state=="throwing1" then
+				if self.throwing<1 then
+					self.attack_height=random_pos()
+					self.state="throwing2"
+					self.throwing=throw_time
+				else
+					if self.throwing==throw_time/2 then
+						sfx(snd_strike)
+						new_boomerang(self)
+					end
+					self.throwing-=1
+				end		
+			elseif self.state=="throwing2" then
+				if self.throwing<1 then
+					self.state="ready"
+					self.cooldown=cooldown_time
+				else
+					if self.throwing==throw_time/2 then
+						sfx(snd_strike)
+						new_boomerang(self)
+					end
+					self.throwing-=1
+				end
+			end
+			self.body.x=self.x+4
+			self.body.y=self.y				
+		end,
+		draw=function(self)
+			pal(1,8)
+			local sprite=128
+			local flip_x=false
+			if self.state=="ready" then
+				sprite=128+anim_index*2
+			elseif self.state=="throwing1" or
+					self.state=="throwing2" then
+				if self.throwing<throw_time/2 then
+					sprite=134
+				else
+					sprite=132
+				end
+				if self.attack_height==down then
+					sprite+=4
+				end
+			end
+			if self.direction==left then
+				flip_x=true
+			end
+			spr(sprite,self.x,self.y,2,2,flip_x)
+			reset_palette()
+		end
+	}
+	place_boss(boomerangguy)
+	return boomerangguy
+end
+
+-------------------------------
+-- magician
+-------------------------------
+
+function new_magician(offset)
+	local magician={
+		x=0,
+		y=0,
+		body={
+			x=0,
+			y=0,
+			width=8,
+			height=12
+		},
+		health=boss_health,
+		update=function(self)
+		end,
+		draw=function(self)
+			local sprite=68
+			spr(68+anim_index*2,self.x,self.y,2,2)
+		end
+	}
+	place_boss(magician)
+	return magician
+end
+
+
+
 ]]
 __gfx__
 ccccccc0000cccccccccccc0000cccccccccccc0000ccccccccccccccccccccccccccc0000cccccccccccccccccccccccccccccccccccccccccccccccccccccc
