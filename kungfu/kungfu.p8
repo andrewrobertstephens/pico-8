@@ -1,12 +1,12 @@
 pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
--- ===================
+-- ============================
 -- kung fu
 -- andrew stephens
 -- june 2020
 -- version 0.1
--- ===================
+-- ============================
 
 test_mode=false
 no_enemies=true
@@ -88,7 +88,7 @@ levels={
 	}
 }
 
-current_level=2
+current_level=3
 seq_index=1
 
 palt(0,false)
@@ -1546,7 +1546,12 @@ player={
 				elseif self.kicking==0 and
 					 self.punching==0 and
 					 self.position==up then
+					local boss=get_boss()
+					local old_x=self.x
 				 self.x+=input.x*self.speed
+					if collision(self.body,boss.body) then
+						self.x=old_x						
+					end
 				 self.walking=true
 				else
 					self.walking=false
@@ -1682,10 +1687,16 @@ player={
 -------------------------------
 
 function new_mrx()
+	local cooltime=20
 	local mrx={
+		startx=0,
 		x=0,
 		y=baseline,
+		boss=true,
+		cooldown=0,
 		ducking=false,
+		health=boss_health,
+		hit=0,
 		punching=0,
 		kicking=0,
 		power=10,
@@ -1701,16 +1712,25 @@ function new_mrx()
 			width=8,
 			height=16,
 		},
+		init=function(self)
+			place_boss(self)
+			self.startx=self.x
+		end,
 		attack=function(self)
-			local n=flr(rnd(2))
-			if n==0 then
+			if flr(rnd(2))>0 then
 				self.punching=strike_duration
 			else
 				self.kicking=strike_duration
 			end
 		end,
 		update=function(self)
-			self.body.x=self.x
+			if self.hit>0 then
+				self.hit-=1
+			end
+			if self.health<1 then
+				self.state="dead"
+			end
+			self.body.x=self.x+4
 			self.body.y=self.y
 			self.hitbox.x=self.x
 			self.hitbox.y=self.y
@@ -1721,16 +1741,46 @@ function new_mrx()
 			else
 				self.hitbox.x=self.x+14
 			end
-
+			self.walking=false
 			if self.state=="ready" then
-				if player.x<self.x+16 then
-					local n=flr(rnd(2))
-					if n>0 then
-						self:attack()
-					end				
+				if self.x<self.startx then
+					self.x+=self.direction
+					self.walking=true
+				else
+					if player.x<self.x+16 and
+							self.kicking==0 and
+							self.punching==0 then	
+						local n=flr(rnd(3))
+						if n==0 then					
+							if flr(rnd(2))>0 then
+								self:attack()
+							end				
+						elseif n==1 then
+							if self.y==baseline then
+								self.state="jumping"
+								self.jumping=jump_max
+							end
+						end
+					end
 				end
 			elseif self.state=="jumping" then
-
+				self.y-=gravity*1.5
+				if flr(rnd(2))>0 then
+					self:attack()
+				end
+				if self.jumping>0 then
+					self.jumping-=1
+				else
+					self.cooldown=cooltime
+					self.state="ready"
+				end
+			elseif self.state=="cooldown" then
+				self.x-=self.direction
+				self.cooldown-=1
+				self.walking=true
+				if self.cooldown<0 then
+					self.state="ready"
+				end
 			end
 			self.y+=gravity
 			if self.y>baseline then
@@ -1742,6 +1792,10 @@ function new_mrx()
 					player:hurt(self.power)
 				end						
 				self.kicking-=1
+				if self.kicking==0 then
+					self.cooldown=cooltime
+					self.state="cooldown"
+				end
 			end
 			if self.punching>0 then
 				if is_climax(self.punching) and
@@ -1749,6 +1803,13 @@ function new_mrx()
 					player:hurt(self.power)
 				end
 				self.punching-=1
+				if self.punching==0 then
+					self.cooldown=cooltime
+					self.state="cooldown"
+				end
+			end
+			if self.cooldown>0 then
+				self.cooldown-=1
 			end
 		end,
 		draw=function(self)
@@ -1756,20 +1817,33 @@ function new_mrx()
 			pal(7,0)
 			pal(6,5)
 			local sprite=10
+			if self.state=="jumping" then
+				sprite=6
+			elseif self.state=="dead" then
+				sprite=46
+			end
 			if self.kicking>0 then
 				if is_climax(self.kicking) then
 					sprite=8
+					if self.state=="jumping" then
+						sprite=38
+					end
 				end
 			elseif self.punching>0 then
 				if is_climax(self.punching) then
 					sprite=12
+					if self.state=="jumping" then
+						sprite=40
+					end
 				end
+			elseif self.walking then
+				sprite=anim_index*2
 			end
 			spr(sprite,self.x,self.y,2,2)
 			reset_palette()
 		end
 	}
-	place_boss(mrx)
+	mrx:init()
 	mrx.state="ready"
 	return mrx
 end
@@ -2077,7 +2151,7 @@ cutscene_mode={
 		cls(12)
 		--rectfill(camera_x,camera_y,camera_x+127,camera_y+24,1)
 		rectfill(0,0,127,24,0)
-		map(0,7,0,baseline+16,16,3)
+		map(0,7,0,baseline+15,16,3)
 		center_print("save sylvia from mr.x",66,32,7,true)
 		if cutscene_flash then
 			cursor(8,48)
