@@ -1,0 +1,124 @@
+pico-8 cartridge // http://www.pico-8.com
+version 29
+__lua__
+-- mygame
+-- andrew stephens
+
+up=0
+left=1
+right=2
+down=4
+
+input={
+	x=0,y=0,b1=false,b2=false,
+	update=function(self)
+		if btn(⬅️) and btn(➡️)==false then
+			self.x=-1
+		elseif btn(➡️) and btn(⬅️)==false then
+			self.x=1
+		else
+			self.x=0
+		end
+		if btn(⬆️) and btn(⬇️)==false then
+			self.y=-1
+		elseif btn(⬇️) and btn(⬆️)==false then
+			self.y=1
+		else
+			self.y=0
+		end		
+	end
+}
+
+player={
+	x=0,y=0,facing=down,anim=1,
+	sprs={
+		down={1,3,1,5},
+		up={7,9,7,11},
+		side={33,35,33,37}
+	},
+	animate=function(self)
+		self.anim+=1
+		if self.anim>4 then
+			self.anim=1
+		end
+	end,
+	update=function(self)
+		if input.x~=0 then
+			if input.x<0 then
+				self.facing=left
+			elseif input.x>0 then
+				self.facing=right
+			end
+			self.x+=input.x
+		end
+		if input.y~=0 then
+			if input.y<0 then
+				self.facing=up
+			elseif input.y>0 then
+				self.facing=down
+			end
+			self.y+=input.y
+		end
+	end,
+	draw=function(self)
+		local sprite,flip_x=false
+		if self.facing==up then
+			sprite=self.sprs.up[1]
+		elseif self.facing==left then
+			sprite=self.sprs.side[1]
+		elseif self.facing==right then
+			sprite=self.sprs.side[1]
+		else
+			sprite=self.sprs.down[1]
+		end
+		if self.facing==left then
+			flip_x=true
+		end
+		spr(sprite,self.x,self.y,2,2,flip_x)
+	end
+}
+
+function _update()
+	input:update()
+	player:update()
+end
+
+function _draw()
+	cls(12)
+	player:draw()
+end
+
+
+__gfx__
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc00000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc00000000
+00700700ccccc44444ccccccccccc44444ccccccccccc44444ccccccccccc44444ccccccccccc44444ccccccccccc44444ccccccccccc44444cccccc00000000
+00077000cccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccc00000000
+00077000cccc4499944ccccccccc4499944ccccccccc4499944ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4499944ccccc00000000
+00700700cccc4779774ccccccccc4779774ccccccccc4779774ccccccccc4444444ccccccccc4444444ccccccccc4444444ccccccccc4779774ccccc00000000
+00000000cccc9759579ccccccccc9759579ccccccccc9759579cccccccccc44444ccccccccccc44444ccccccccccc44444cccccccccc9759579ccccc00000000
+00000000cccc8999998cccccccccc999998ccccccccc899999cccccccccc8888888ccccccccc8888888ccccccccc8888888cccccccccc999998ccccc00000000
+00000000ccc888999888cccccccc88999888ccccccc88899988cccccccc888888888ccccccc988888888ccccccc888888889ccccccccc8999888cccc00000000
+00000000cc98888888889cccccc8888888889ccccc9888888888cccccc98888888889cccccc9988888899ccccc9988888899cccccccc888888889ccc00000000
+00000000cc99c88888c99cccccc8888888c99ccccc99c8888888cccccc99c88888c99cccccccc88888c99ccccc99c88888cccccccccc888888c99ccc00000000
+00000000cccccdddddccccccccc99dddddcccccccccccddddd99cccccccccdddddcccccccccccdddddcccccccccccdddddccccccccccc88dddcccccc00000000
+00000000cccccddcddccccccccc9944cddcccccccccccddc4499cccccccccddcddcccccccccccddc44ccccccccccc44cddccccccccccc88cddcccccc00000000
+00000000ccccc44c44ccccccccccccccddcccccccccccddcccccccccccccc44c44cccccccccccddcccccccccccccccccddccccccccccc99cddcccccc00000000
+00000000cccccccccccccccccccccccc44ccccccccccc44cccccccccccccccccccccccccccccc44ccccccccccccccccc44ccccccccccc99c44cccccc00000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc00000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000000000000000000000000000000000000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000000000000000000000000000000000000000
+00000000cccccc444ccccccccccccc444ccccccccccccc444cccccccccccc44444cccccccccccc444ccccccc0000000000000000000000000000000000000000
+00000000ccccc44444ccccccccccc44444ccccccccccc44444cccccccccc4444444cccccccccc44444cccccc0000000000000000000000000000000000000000
+00000000ccccc44977ccccccccccc44977ccccccccccc44977cccccccccc4444444cccccccccc44977cccccc0000000000000000000000000000000000000000
+00000000ccccc49975ccccccccccc49975ccccccccccc49975cccccccccc4444444cccccccccc49975cccccc0000000000000000000000000000000000000000
+00000000ccccc999999cccccccccc999999cccccccccc999999cccccccccc444448cccccccccc999999ccccc0000000000000000000000000000000000000000
+00000000cccccc8999ccccccccccc88999cccccccccc888999cccccccccc8888888cccccccccc88899cccccc0000000000000000000000000000000000000000
+00000000ccccc8888ccccccccccc88888cccccccccc888888cccccccccc8888888cccccccccc888888899ccc0000000000000000000000000000000000000000
+00000000ccccc88899cccccccccc88888899cccccc99888889cccccccc99888888cccccccccc888888899ccc0000000000000000000000000000000000000000
+00000000cccccc8899ccccccccccc8888899cccccc99c88889cccccccc99c88888ccccccccccc8888ccccccc0000000000000000000000000000000000000000
+00000000cccccc11cccccccccccc11111ccccccccccc11111ccccccccccccdddddcccccccccc11111ccccccc0000000000000000000000000000000000000000
+00000000cccccc11ccccccccccc411c11cccccccccc411c11cccccccccccc44cddccccccccc411c11ccccccc0000000000000000000000000000000000000000
+00000000cccccc444cccccccccc44cc444ccccccccc44cc444ccccccccccccccddccccccccc44cc444cccccc0000000000000000000000000000000000000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccc44cccccccccccccccccccccc0000000000000000000000000000000000000000
+00000000cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000000000000000000000000000000000000000
