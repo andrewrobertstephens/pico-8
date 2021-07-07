@@ -1,257 +1,260 @@
 pico-8 cartridge // http://www.pico-8.com
-version 29
+version 32
 __lua__
 -- balloon fight
 -- andrew stephens
--- july 2020
+-- july 2021
 -- version 0.1
 
 test_mode=true
 
 gravity=1
 max_speed=3
-force=1.25
+force=2
 ticks=0
 
+-- get map loc based on x,y
+maploc=function(x,y)
+ local col=flr((x+7)/8)
+ local row=flr((y+7)/8)
+ return {
+ 	col=col,
+ 	row=row
+ }
+end
+
 -------------------------------
--- pico-8 routines
+-- pico-8 callbacks
 -------------------------------
 
 function _init()
-	bgstars:init()
-	level:get()
+ bgstars:init()
+ level:get()
 end
 
 function _update()
-	ticks=ticks+1
-	bgstars:update()
-	input:get()
-	player:update()
+ ticks=ticks+1
+ bgstars:update()
+ player:update()
 end
 
 function _draw()
-	cls(0)
-	bgstars:draw()
-	level:draw()
-	player:draw()
-	--[[
-	local loc=player:location()
-	print(loc.x,0,0,7)
-	print(loc.y,10,0,7)
-	print(level:solid(loc.x,loc.y),20,7)
-	]]
+ cls(0)
+ bgstars:draw()
+ level:draw()
+ player:draw()
+ --[[
+ local loc=player:location()
+ print(loc.x,0,0,7)
+ print(loc.y,10,0,7)
+ print(level:solid(loc.x,loc.y),20,7)
+ ]]
 end
 
--------------------------------
--- input
--------------------------------
 
-input={
-	x,y,b,
-	get=function(self)
-		self.x=0
-		self.y=0
-		self.b=false
-		if btn(⬅️) and btn(➡️)==false then
-			self.x=-1
-		elseif btn(➡️) and btn(⬅️)==false then
-			self.x=1
-		else
-			self.x=nil
-		end
-		if btn(4) or btn(5) then
-			self.b=true
-		end
-	end,
-}
-
--------------------------------
--- player
--------------------------------
-
-player={
-	x=0,
-	y=0,
-	anim=1,
-	balloons=2,
-	ball_anim=1,
-	direction=1,
-	flapping=false,
-	moving=false,
-	state="flying",
-	sprs={
-		standing={0,0,2,0,0,4},
-		running={6,8,6,10},
-		flying={32,34,32,36},
-	},
-	velocity={x=0,y=0},
-	animate=function(self)
-		if ticks%5==0 then
-			self.anim+=1
-			if self.anim>4 then
-				self.anim=1
-			end
-		end
-		if ticks%30==0 then
-			self.ball_anim+=1
-			if self.ball_anim>6 then
-				self.ball_anim=1
-			end
-		end
-	end,
-	maploc=function(self)
-		local row=flr((self.x+7)/8)
-		local col=flr((self.y+7)/8)
-		return {
-			row=row,col=col,
-			x1=col*8,y1=row*8,
-			x2=x1+7,y2=y1+7
-		}
-	end,
-	update=function(self)
-		-- button / lift
-		if input.b then
-			self.velocity.y-=force
-			self.state="flying"
-			self.flapping=true
-		else
-			self.flapping=false
-		end
-		-- vertical velocity
-		self.velocity.y+=gravity
-		if self.velocity.y<-max_speed then
-			self.velocity.y=max_speed
-		elseif self.velocity.y>gravity then
-			self.velocity.y=gravity
-		end
-		-- horizontal velocity
-		self.velocity.x+=input.x*0.1
-		if self.velocity.x>max_speed then
-			self.velocity.x=max_speed
-		elseif self.velocity.x<-max_speed then
-			self.velocity.x=-max_speed
-		end
-
-		self.x+=self.velocity.x		
-		self.y+=self.velocity.y
-
-		local loc=self:maploc()
-
-		if self.velocity.x<0 then
-			if level:solid(loc.x,loc.y) then
-				self.x=loc.x2
-			end
-		elseif self.velocity.x>0 then
-			if level:solid(loc.x,loc.y) then
-				self.x=loc.x1
-			end
-		end
-		
-		if self.velocity.y<0 then
-			if level:solid(loc.x,loc.y) then
-				self.y=loc.y2
-			end
-		elseif self.velocity.y>0 then
-			if level:solid(loc.x,loc.y) then
-				self.y=loc.y1
-			end
-		end
-
-		if self.x<-8 then
-			self.x=119
-		elseif self.x>119 then
-			self.x=-8
-		end
-
-		self:animate()
-	end,
-	draw=function(self)
-		local sprite
-		local flip_x=false
-		if self.direction==1 then
-			flip_x=true
-		end
-		if self.state=="flying" then
-			if self.flapping then
-				sprite=self.sprs.flying[self.anim]
-			else
-				sprite=self.sprs.flying[1]
-			end
-		elseif self.state=="grounded" then
-			if self.moving then
-				sprite=self.sprs.running[self.anim]
-			else
-				sprite=self.sprs.standing[self.ball_anim]
-			end
-		end
-		spr(sprite,self.x,self.y,2,2,flip_x)
-	end
-}
-
--------------------------------
--- level
--------------------------------
-
-level={
-	blocks={},
-	draw=function(self)
-		map(0,0,0,0,16,16)
-	end,
-	get=function(self)
-		for x=0,15 do
-			self.blocks[x]={}
-			for y=0,15 do
-				self.blocks[x][y]=mget(x,y)
-			end
-		end
-	end,
-	solid=function(self,x,y)
-		if x<0 then
-			x=0
-		elseif x>15 then
-			x=15
-		end
-		if y<0 then
-			y=0
-		elseif y>15 then
-			y=15
-		end
-		local var=self.blocks[x][y]
-		return fget(var,1)
-	end
-}
-
--------------------------------
--- background stars
--------------------------------
+-->8
+-- bgstars
 
 bgstars={
-	units={},
-	init=function(self)
-		for i=1,25 do
-			local unit={
-				x=flr(rnd(128)),
-				y=flr(rnd(128))
-			}
-			add(self.units,unit)
-		end
-	end,
-	update=function(self)
-		for unit in all(self.units) do
-			if flr(rnd(100))==0 then
-				unit.x=flr(rnd(128))
-				unit.y=flr(rnd(128))
-			end
-		end
-	end,
-	draw=function(self)
-		for unit in all(self.units) do
-			pset(unit.x,unit.y,7)
-		end
-	end
+
+ units={},
+
+ init=function(self)
+  for i=1,25 do
+   local unit={
+    x=flr(rnd(128)),
+    y=flr(rnd(128))
+   }
+   add(self.units,unit)
+  end
+ end,
+ 
+ update=function(self)
+  for unit in all(self.units) do
+   if flr(rnd(100)) == 0 then
+    unit.x=flr(rnd(128))
+    unit.y=flr(rnd(128))
+   end
+  end
+ end,
+ 
+ draw=function(self)
+  for unit in all(self.units) do
+   pset(unit.x,unit.y,7) 
+  end
+ end
+ 
 }
 
+-->8
+-- input
 
+input={
+ 
+ -- get input
+ get=function(self)
+  self.x=0
+  self.y=0
+  self.b=false
+  if btn(⬅️) and btn(➡️)==false then
+   self.x=-1
+  elseif btn(➡️) and btn(⬅️)==false then
+   self.x=1
+  else
+   self.x=0
+  end
+  if btn(4) or btn(5) then
+   self.b=true
+  end
+ end
+
+}
+-->8
+-- level
+
+level={ 
+ blocks={}
+}
+
+-- draw level
+function level:draw()
+ map(0,0,0,0,16,16)
+end
+ 
+-- load map blocks
+function level:get()
+ for x=0,15 do
+  self.blocks[x]={}
+  for y=0,15 do
+   self.blocks[x][y]=mget(x,y)
+  end
+ end
+end
+
+-- is row/col a solid on level?
+function level:solid(col,row)
+ local var=self.blocks[col][row]
+ return fget(var,1)
+end
+-->8
+-- player
+
+player={
+ x=0,
+ y=0,
+ anim=1,
+ balloons=2,
+ ball_anim=1,
+ direction=1,
+ flapping=false,
+ moving=false,
+ grounded=false,
+ sprs={
+  standing={0,0,2,0,0,4},
+  running={6,8,6,10},
+  flying={32,34,32,36},
+ },
+ velocity={x=0,y=0}
+}
+ 
+-- process animation
+function player:animate()
+ if ticks%3==0 then
+  self.anim+=1
+  if self.anim>4 then
+   self.anim=1
+  end
+ end
+ if ticks%30==0 then
+  self.ball_anim+=1
+  if self.ball_anim>6 then
+   self.ball_anim=1
+  end
+ end
+end
+ 
+-- draw player
+function player:draw()
+ local sprite
+ local flip_x=false
+ if self.direction==1 then
+  flip_x=true
+ end
+ if not self.grounded then
+  if self.flapping then
+   sprite=self.sprs.flying[self.anim]
+  else
+   sprite=self.sprs.flying[1]
+  end
+ elseif self.state=="grounded" then
+  if self.moving then
+   sprite=self.sprs.running[self.anim]
+  else
+   sprite=self.sprs.standing[self.ball_anim]
+  end
+ end
+ spr(sprite,self.x,self.y,2,2,flip_x)
+end
+
+-- update player movement
+function player:update()
+ 
+ input:get()
+ 
+ if input.x<0 then
+ 	self.direction=0
+ elseif input.x>0 then
+ 	self.direction=1
+ end
+ 
+ -- button / lift
+ if input.b then
+  self.velocity.y-=force
+  self.grounded=false
+  self.flapping=true
+ else
+  self.flapping=false
+ end
+ 
+ -- vertical velocity
+ self.velocity.y+=gravity
+ if self.velocity.y<-max_speed then
+  self.velocity.y=-max_speed
+ elseif self.velocity.y>gravity then
+  self.velocity.y=gravity
+ end
+
+ -- horizontal velocity
+ if self.grounded or input.b then
+ 	self.velocity.x+=input.x*0.1
+ 	if self.velocity.x>max_speed then
+  	self.velocity.x=max_speed
+	 elseif self.velocity.x<-max_speed then
+ 	 self.velocity.x=-max_speed
+	 end
+	end
+  
+ self.x+=self.velocity.x  
+ self.y+=self.velocity.y
+ 
+ local loc=maploc(self.x,self.y) 
+ if level:solid(loc.col,loc.row) then
+		self.grounded=true
+	end
+ 
+ if self.y<0 then
+		self.y=0
+ end
+ 
+ if self.x<-8 then
+  self.x=119
+ elseif self.x>119 then
+  self.x=-8
+ end
+	
+	self:animate()
+
+end
 
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b33b3333b33b3333b33b0000000000
