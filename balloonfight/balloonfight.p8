@@ -6,12 +6,19 @@ __lua__
 -- july 2021
 -- version 0.1
 
+debug=true
+debug_messages={}
 test_mode=true
 
 gravity=1
 max_speed=3
 force=2
 ticks=0
+
+-- lerp
+function lerp(a, b, t)
+	return a+(b-a)*t
+end
 
 -- get map loc based on x,y
 maploc=function(x,y)
@@ -36,6 +43,7 @@ function _update()
  ticks=ticks+1
  bgstars:update()
  player:update()
+ debug:update()
 end
 
 function _draw()
@@ -43,6 +51,7 @@ function _draw()
  bgstars:draw()
  level:draw()
  player:draw()
+	debug:draw()
  --[[
  local loc=player:location()
  print(loc.x,0,0,7)
@@ -133,9 +142,10 @@ end
 
 -- is row/col a solid on level?
 function level:solid(col,row)
- local var=self.blocks[col][row]
- return fget(var,1)
+ --local var=self.blocks[col][row]
+ --return fget(var,1)
 end
+
 -->8
 -- player
 
@@ -216,44 +226,89 @@ function player:update()
   self.flapping=false
  end
  
- -- vertical velocity
- self.velocity.y+=gravity
- if self.velocity.y<-max_speed then
-  self.velocity.y=-max_speed
- elseif self.velocity.y>gravity then
-  self.velocity.y=gravity
- end
+	self:animate()
+ self:update_x()
+ self:update_y()
 
- -- horizontal velocity
- if self.grounded or input.b then
- 	self.velocity.x+=input.x*0.1
- 	if self.velocity.x>max_speed then
-  	self.velocity.x=max_speed
-	 elseif self.velocity.x<-max_speed then
- 	 self.velocity.x=-max_speed
-	 end
-	end
-  
- self.x+=self.velocity.x  
- self.y+=self.velocity.y
- 
- local loc=maploc(self.x,self.y) 
- if level:solid(loc.col,loc.row) then
-		self.grounded=true
-	end
- 
- if self.y<0 then
-		self.y=0
+end
+
+
+-- update x position
+function player:update_x()
+	
+	-- if grounded/normal movement
+	if self.grounded then
+		self.velocity.x=input.x
+		
+	-- otherwise, velocity stuff
+	else
+
+		-- adjust vel if flapping
+ 	if input.x and self.flapping then
+ 		self.velocity.x+=input.x*0.1
+ 		if self.velocity.x>max_speed then
+	  	self.velocity.x=max_speed
+		 elseif self.velocity.x<-max_speed then
+	 	 self.velocity.x=-max_speed
+		 end
+		end
+
  end
- 
+	
+	-- move for x
+ self.x+=self.velocity.x  
+	
+	-- screen wrapping
  if self.x<-8 then
   self.x=119
  elseif self.x>119 then
   self.x=-8
  end
-	
-	self:animate()
+ 
+end
 
+-- update y position
+function player:update_y()
+
+	-- add gravity (always)
+ self.velocity.y+=gravity
+
+	-- cap max speed
+ if self.velocity.y<-max_speed then
+  self.velocity.y=-max_speed
+ elseif self.velocity.y>max_speed then
+  self.velocity.y=max_speed
+ end
+
+	-- move for y
+ self.y+=self.velocity.y
+ 
+	-- keep on screen
+ if self.y<0 then
+		self.y=0
+ end
+
+end
+-->8
+-- debug
+
+debug={}
+
+function debug:draw()
+	local status=''
+	for message in all(self.messages) do
+		status=status..' '..message
+	end
+	print(status,0,0,7)
+end
+
+function debug:update()
+	self.messages={
+		'grnd:'..(player.grounded and '1' or '1'),
+		'inpx:'..input.x,
+		'velx:'..player.velocity.x,
+		'vely:'..player.velocity.x
+	}
 end
 
 __gfx__
